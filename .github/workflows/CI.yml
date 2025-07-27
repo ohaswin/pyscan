@@ -60,6 +60,8 @@ jobs:
           # Use vendored OpenSSL for cross-compilation targets
           OPENSSL_STATIC: ${{ matrix.platform.target != 'x86_64' && '1' || '' }}
           OPENSSL_VENDORED: ${{ matrix.platform.target != 'x86_64' && '1' || '' }}
+          # Additional environment variables to force vendored builds
+          OPENSSL_NO_PKG_CONFIG: ${{ matrix.platform.target != 'x86_64' && '1' || '' }}
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -103,6 +105,8 @@ jobs:
           # Use vendored OpenSSL for cross-compilation targets
           OPENSSL_STATIC: ${{ matrix.platform.target != 'x86_64' && '1' || '' }}
           OPENSSL_VENDORED: ${{ matrix.platform.target != 'x86_64' && '1' || '' }}
+          # Additional environment variables to force vendored builds
+          OPENSSL_NO_PKG_CONFIG: ${{ matrix.platform.target != 'x86_64' && '1' || '' }}
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
