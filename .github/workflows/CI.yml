@@ -38,10 +38,6 @@ jobs:
             target: ppc64le
     steps:
       - uses: actions/checkout@v4
-      - name: Install OpenSSL development packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -49,6 +45,15 @@ jobs:
           args: --release --out dist
           sccache: 'true'
           manylinux: auto
+          before-script-linux: |
+            # Install OpenSSL in the manylinux container
+            if command -v yum &> /dev/null; then
+              yum install -y openssl-devel pkgconfig
+            elif command -v apt-get &> /dev/null; then
+              apt-get update && apt-get install -y libssl-dev pkg-config
+            elif command -v apk &> /dev/null; then
+              apk add --no-cache openssl-dev pkgconfig
+            fi
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -70,10 +75,6 @@ jobs:
             target: armv7
     steps:
       - uses: actions/checkout@v4
-      - name: Install OpenSSL development packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -81,6 +82,15 @@ jobs:
           args: --release --out dist
           sccache: 'true'
           manylinux: musllinux_1_2
+          before-script-linux: |
+            # Install OpenSSL in the musllinux container
+            if command -v apk &> /dev/null; then
+              apk add --no-cache openssl-dev pkgconfig
+            elif command -v yum &> /dev/null; then
+              yum install -y openssl-devel pkgconfig
+            elif command -v apt-get &> /dev/null; then
+              apt-get update && apt-get install -y libssl-dev pkg-config
+            fi
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
