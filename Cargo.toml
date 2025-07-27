@@ -13,6 +13,7 @@ categories = ["command-line-utilities"]
 
 
 [dependencies]
+openssl = { version = "0.10", features = ["vendored"] }
 chrono = "0.4.24"
 clap = {version="4.2.1", features=["derive"]}
 console = "0.15.5"
