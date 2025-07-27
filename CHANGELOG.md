@@ -101,3 +101,10 @@ Pyscan has some **very interesting developments** planned in the future. Checkou
 The PR and the "big" update is still an ongoing effort, slowed down due to my recent lack of time (college, part-time work).
 
 Consider **donating** if you *actually* use this tool, as I'm thinking about archiving it after some maintanence done.
+
+## v0.1.8 (July 27, 2025)
+
+### Notes
+
+- Add feature: Ignore specific vulnerability IDs using a .pyscanignore file either at cwd or config folder of the OS (global)
+- Nothing much, honestly, look at the last changelog date. College has been crazy, I've been doing internships and side gigs and working meself to the bone. Still broke, but at least I know how shitty this codebase is now, and I'm grateful that i hold the awareness to realize that after 3 years lol.
