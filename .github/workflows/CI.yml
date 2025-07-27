@@ -38,6 +38,10 @@ jobs:
             target: ppc64le
     steps:
       - uses: actions/checkout@v4
+      - name: Install OpenSSL development packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -66,6 +70,10 @@ jobs:
             target: armv7
     steps:
       - uses: actions/checkout@v4
+      - name: Install OpenSSL development packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -90,6 +98,27 @@ jobs:
             target: x86
     steps:
       - uses: actions/checkout@v4
+      - name: Install OpenSSL (Windows)
+        run: |
+          # Install OpenSSL via vcpkg (comes pre-installed on GitHub runners)
+          vcpkg install openssl:x64-windows-static-md
+        shell: cmd
+        if: matrix.platform.target == 'x64'
+      - name: Install OpenSSL (Windows x86)
+        run: |
+          vcpkg install openssl:x86-windows-static-md
+        shell: cmd
+        if: matrix.platform.target == 'x86'
+      - name: Set OpenSSL environment variables
+        run: |
+          echo "OPENSSL_DIR=C:/vcpkg/installed/x64-windows-static-md" >> $GITHUB_ENV
+          echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
+        if: matrix.platform.target == 'x64'
+      - name: Set OpenSSL environment variables (x86)
+        run: |
+          echo "OPENSSL_DIR=C:/vcpkg/installed/x86-windows-static-md" >> $GITHUB_ENV
+          echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
+        if: matrix.platform.target == 'x86'
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -113,6 +142,13 @@ jobs:
             target: aarch64
     steps:
       - uses: actions/checkout@v4
+      - name: Install OpenSSL (macOS)
+        run: |
+          # OpenSSL is typically available via Homebrew on GitHub runners
+          # but we'll ensure it's installed and set the path
+          brew install openssl@3 pkg-config
+          echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -129,6 +165,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install OpenSSL development packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
