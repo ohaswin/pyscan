@@ -410,6 +410,7 @@ impl Vulnerability {
         // println!("{:#?}", imports_info);
         let name_from_v = if let Some(n) = self.vulns.first() {
             if !n.affected.is_empty() {n.affected.first().unwrap().package.name.clone()}
+
             else {"Name in Context".to_string()}
         }
         else {"Name In Context".to_string()};

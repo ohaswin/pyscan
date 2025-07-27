@@ -1,4 +1,4 @@
-use crate::{display, ARGS};
+use crate::{display, ARGS, VULN_IGNORE};
 /// provides the functions needed to connect to various advisory sources.
 use crate::{parser::structs::Dependency, scanner::models::Vulnerability};
 use crate::{
@@ -49,7 +49,7 @@ impl Osv {
             }
         } else {
             eprintln!(
-                "Could not build the network client to connect to OSV. Report this at github.com/aswinnnn/pyscan/issues"
+                "Could not build the network client to connect to OSV. Report this at github.com/ohaswin/pyscan/issues"
             ); exit(1)
         }
     }
@@ -68,7 +68,7 @@ impl Osv {
             } else if let Ok(res) = res {
                 Some(res.to_string())
             } else {
-                eprintln!("A very unexpected error occurred while retrieving version info from Pypi. Please report this on https://github.com/aswinnnn/pyscan/issues");
+                eprintln!("A very unexpected error occurred while retrieving version info from Pypi. Please report this on https://github.com/ohaswin/pyscan/issues");
                 exit(1);
             }
         };
@@ -142,12 +142,24 @@ impl Osv {
                         
                         let mut vecvulns: Vec<Vuln> = Vec::new();
                         for qv in vulns.iter() {
+                            // println!("{:#?}", vulns);
+
+                            if ( VULN_IGNORE.contains(&qv.id) || ARGS.get().unwrap().ignorevulns.contains(&qv.id) ) && !ARGS.get().unwrap().pedantic {
+                                // if the vuln ID is in the ignore list, skip it
+                                println!("Ignoring vuln with ID: {}", qv.id);
+                                continue;
+                            }
                             vecvulns.push(self.vuln_id(qv.id.as_str()).await) // retrives vuln info from API with a vuln ID
                         }
 
-                        // has to be turnt to Vulnerability before becoming a scanned dependency
+                        // has to be turned to a Vulnerability before becoming a scanned dependency
                         let structvuln = Vulnerability {vulns: vecvulns};
+                        // println!("[VECVULNS] \n {:#?}", structvuln);
                         progress.count_one(); progress.display(); // increment progress
+                        if structvuln.vulns.is_empty() {
+                            // if no vulns found, skip this dep
+                            continue;
+                        }
                         scanneddeps.push(structvuln.to_scanned_dependency(&imports_info));
 
                     }
@@ -196,7 +208,7 @@ impl Osv {
                 exit(1);
             }
         } else {
-            eprintln!("Could not fetch a response from osv.dev [scanner/api/vulns_id]");
+            eprintln!("Could not fetch a response from osv.dev [scanner/api/vuln_id]");
             exit(1);
         }
     }

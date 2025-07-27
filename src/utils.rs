@@ -11,6 +11,7 @@ use std::{
     io::{self, Error, ErrorKind},
     str::{self},
 };
+use dirs;
 
 pub fn get_time() -> String {
     // get the current time in a stting format i like.
@@ -30,7 +31,39 @@ pub fn get_time() -> String {
 }
 
 pub fn get_version() -> String {
-    "0.1.7".to_string()
+    "0.1.8".to_string()
+}
+
+pub fn get_vuln_ignores() -> Vec<String> {
+    // returns a vector of vuln IDs to ignore from the .pyscanignore file either in the current directory or the config directory.
+    // this is used to ignore vulns that are not relevant to the project.
+    // check if the file exists in the current directory first, then check the config directory.
+    // if the file exists, read the file and return a vector of strings.
+    let mut ignores: Vec<String> = Vec::new();
+    let current_dir = std::env::current_dir().unwrap();
+    let current_path = current_dir.join(".pyscanignore");
+    if current_path.exists() {
+        if let Ok(contents) = std::fs::read_to_string(current_path) {
+            ignores.extend(contents.lines().map(|s| s.to_string()));
+        } else {
+            eprintln!("Could not read the .pyscanignore file in the current directory. Ignoring it.");
+        }
+    } else {
+
+        let config_path = dirs::config_dir().unwrap().join("pyscan").join(".pyscanignore");
+        if config_path.exists() {
+            if let Ok(contents) = std::fs::read_to_string(config_path) {
+                ignores.extend(contents.lines().map(|s| s.to_string()));
+            } else {
+                eprintln!("Could not read the .pyscanignore file in the config directory. Ignoring it.");
+            }
+        } else {
+            return ignores;
+        }
+    }
+
+    ignores
+
 }
 
 pub async fn _reqwest_send(method: &str, url: String) -> Option<Response> {
@@ -63,7 +96,7 @@ pub async fn _reqwest_send(method: &str, url: String) -> Option<Response> {
             );  exit(1)
         }
     } else {
-        eprintln!("Could not build the network client. Report this at https://github.com/aswinnnn/pyscan/issues");
+        eprintln!("Could not build the network client. Report this at https://github.com/ohaswin/pyscan/issues");
         None
     }
 }

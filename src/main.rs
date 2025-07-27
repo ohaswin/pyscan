@@ -18,8 +18,8 @@ use tokio::task;
 
 #[derive(Parser, Debug)]
 #[command(
-    author = "aswinnnn",
-    version = "0.1.7",
+    author = "ohaswin",
+    version = "0.1.8",
     about = "python dependency vulnerability scanner.\n\ndo 'pyscan [subcommand] --help' for specific help."
 )]
 struct Cli {
@@ -69,6 +69,20 @@ struct Cli {
     /// turns off the caching of pip packages at the starting of execution.
     #[arg(long="cache-off", required=false,action=clap::ArgAction::SetTrue)]
     cache_off: bool,
+
+    /// ignores the given vuln IDs (from OSV) seperated by spaces
+    #[arg(
+        long,
+        short = 'i',
+        value_delimiter = ' ',
+        value_name = "VULN_ID1 VULN_ID2 VULN_ID3...",
+    )]
+    ignorevulns: Vec<String>,
+
+    /// ignore .pyscanignore file (anywhere), reports all vulnerabilities found.
+    #[arg(long, short, action=clap::ArgAction::SetTrue, default_value_t = false)]
+    pedantic: bool,
+
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -104,7 +118,10 @@ static ARGS: Lazy<OnceLock<Cli>> = Lazy::new(|| OnceLock::from(Cli::parse()));
 
 static PIPCACHE: Lazy<PipCache> = Lazy::new(|| utils::PipCache::init());
 // is a hashmap of (package name, version) from 'pip list'
-// because calling 'pip show' everytime might get expensive if theres a lot of dependencies to check.
+// because calling 'pip show' everytime might get expensive if there are a lot of dependencies to check.
+
+static VULN_IGNORE: Lazy<Vec<String>> = Lazy::new(|| { utils::get_vuln_ignores() });
+// vuln IDs
 
 #[tokio::main]
 async fn main() {
@@ -157,7 +174,7 @@ async fn main() {
     }
 
     println!(
-        "pyscan v{} | by Aswin S (github.com/aswinnnn) | \x1b[90mConsider donating to a broke college student: https://ko-fi.com/aswinnnn \x1b[0m",
+        "pyscan v{} | by Aswin (https://github.com/ohaswin)",
         get_version()
     );
 
