@@ -107,4 +107,5 @@ Consider **donating** if you *actually* use this tool, as I'm thinking about arc
 ### Notes
 
 - Add feature: Ignore specific vulnerability IDs using a .pyscanignore file either at cwd or config folder of the OS (global)
+- Improve CI to include much more platforms, except for 2 obscure ones due to assembly issues (s390x, ppc64le) hopefully all 0 of their users are not annoyed at me.
 - Nothing much, honestly, look at the last changelog date. College has been crazy, I've been doing internships and side gigs and working meself to the bone. Still broke, but at least I know how shitty this codebase is now, and I'm grateful that i hold the awareness to realize that after 3 years lol.
