@@ -28,3 +28,4 @@ lenient_semver = { version = "0.4.2", features = [ "version_semver"] }
 semver = "1.0.17"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 futures = "0.3.28"
+dirs = "6.0.0"
