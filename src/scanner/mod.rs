@@ -16,7 +16,7 @@ pub async fn start(imports: Vec<Dependency>) -> Result<(), std::io::Error> {
 
     // collected contains the dependencies with found vulns. imports_info contains a name, version hashmap of all found dependencies so we can display for all imports if vulns have been found or not
     let collected = osv.query_batched(imports).await;
-    // query_batched passes stuff onto display module after
+    // query_batched passes stuff onto display module after for printing to screen
     
     // if we collected vulns:
     if !collected.is_empty() {

@@ -169,7 +169,7 @@ impl VersionStatus {
                 println!("{} : {}",style(name).red().dim(), style("A version could not be detected through source or pip, so retrieving latest version from pypi.org instead.").dim());
                 Some(v.to_string())
             } else {
-                eprintln!("A version could not be retrieved for {}. This should not happen as pyscan defaults pip or pypi.org, unless:\n1) Pip is not installed\n2) You don't have an internet connection\n3) You did not anticipate the consequences of not specifying a version for your dependency in the configuration files.\nReach out on github.com/aswinnnn/pyscan/issues if the above cases did not take place.", style(name).bright().red());
+                eprintln!("A version could not be retrieved for {}. This should not happen as pyscan defaults pip or pypi.org, unless:\n1) Pip is not installed\n2) You don't have an internet connection\n3) You did not anticipate the consequences of not specifying a version for your dependency in the configuration files.\nReach out on github.com/ohaswin/pyscan/issues if the above cases did not take place.", style(name).bright().red());
                 exit(1);
             };
             d_version.unwrap()

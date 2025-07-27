@@ -1,6 +1,6 @@
 <h1 align="center"> 🐍 Pyscan </h1>
 
-![CI](https://github.com/aswinnnn/pyscan/actions/workflows/CI.yml/badge.svg) ![Liscense](https://img.shields.io/github/license/aswinnnn/pyscan?color=ff64b4) [![PyPI](https://img.shields.io/pypi/v/pyscan-rs?color=ff69b4)](https://pypi.org/project/pyscan-rs) [![](https://img.shields.io/crates/v/pyscan?color=ff64b4)](https://crates.io/crates/pyscan) [![GitHub issues](https://img.shields.io/github/issues/aswinnnn/pyscan.svg?color=ff69b4)](https://GitHub.com/aswinnnn/pyscan/issues/) [![Top Language](https://img.shields.io/github/languages/top/aswinnnn/pyscan?color=ff69b4)](https://img.shields.io/github/languages/top/aswinnnn/pyscan)
+![CI](https://github.com/ohaswin/pyscan/actions/workflows/CI.yml/badge.svg) ![Liscense](https://img.shields.io/github/license/ohaswin/pyscan?color=ff64b4) [![PyPI](https://img.shields.io/pypi/v/pyscan-rs?color=ff69b4)](https://pypi.org/project/pyscan-rs) [![](https://img.shields.io/crates/v/pyscan?color=ff64b4)](https://crates.io/crates/pyscan) [![GitHub issues](https://img.shields.io/github/issues/ohaswin/pyscan.svg?color=ff69b4)](https://GitHub.com/ohaswin/pyscan/issues/) [![Top Language](https://img.shields.io/github/languages/top/ohaswin/pyscan?color=ff69b4)](https://img.shields.io/github/languages/top/ohaswin/pyscan)
 
 <h4 align="center"> 
 
