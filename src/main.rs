@@ -18,8 +18,8 @@ use tokio::task;
 
 #[derive(Parser, Debug)]
 #[command(
-    author = "aswinnnn",
-    version = "0.1.7",
+    author = "ohaswin",
+    version = "0.1.8",
     about = "python dependency vulnerability scanner.\n\ndo 'pyscan [subcommand] --help' for specific help."
 )]
 struct Cli {

@@ -1,13 +1,13 @@
 [package]
 name = "pyscan"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 authors = ["Aswin S <aswinxn@protonmail.com>"]
 license = "MIT"
 description = "python dependency vulnerability scanner"
 readme = "README.md"
-homepage = "https://github.com/aswinnnn/pyscan"
-repository = "https://github.com/aswinnnn/pyscan"
+homepage = "https://github.com/ohaswin/pyscan"
+repository = "https://github.com/ohaswin/pyscan"
 keywords = ["cli", "python", "security", "vulnerability", "pentesting"]
 categories = ["command-line-utilities"]
 

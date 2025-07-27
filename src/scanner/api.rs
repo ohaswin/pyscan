@@ -49,7 +49,7 @@ impl Osv {
             }
         } else {
             eprintln!(
-                "Could not build the network client to connect to OSV. Report this at github.com/aswinnnn/pyscan/issues"
+                "Could not build the network client to connect to OSV. Report this at github.com/ohaswin/pyscan/issues"
             ); exit(1)
         }
     }
@@ -68,7 +68,7 @@ impl Osv {
             } else if let Ok(res) = res {
                 Some(res.to_string())
             } else {
-                eprintln!("A very unexpected error occurred while retrieving version info from Pypi. Please report this on https://github.com/aswinnnn/pyscan/issues");
+                eprintln!("A very unexpected error occurred while retrieving version info from Pypi. Please report this on https://github.com/ohaswin/pyscan/issues");
                 exit(1);
             }
         };

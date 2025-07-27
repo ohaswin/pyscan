@@ -25,7 +25,7 @@ That's all for this release!
 
 by <i>"source"</i> I mean `requirements.txt`, `pyproject.toml` or your python files.
 
-- pyscan will not be using [deps.dev](https://deps.dev) API anymore to retrive latest stable versions. Will be using `pip` instead to get the installed package version from the user. Should've thought of that sooner. [credits to @anotherbridge for [#1](https://github.com/aswinnnn/pyscan/issues/1)]
+- pyscan will not be using [deps.dev](https://deps.dev) API anymore to retrive latest stable versions. Will be using `pip` instead to get the installed package version from the user. Should've thought of that sooner. [credits to @anotherbridge for [#1](https://github.com/ohaswin/pyscan/issues/1)]
   
 -  better error messages, though panics are the main way of displaying them.
   

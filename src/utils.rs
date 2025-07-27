@@ -31,7 +31,7 @@ pub fn get_time() -> String {
 }
 
 pub fn get_version() -> String {
-    "0.1.7".to_string()
+    "0.1.8".to_string()
 }
 
 pub fn get_vuln_ignores() -> Vec<String> {
@@ -96,7 +96,7 @@ pub async fn _reqwest_send(method: &str, url: String) -> Option<Response> {
             );  exit(1)
         }
     } else {
-        eprintln!("Could not build the network client. Report this at https://github.com/aswinnnn/pyscan/issues");
+        eprintln!("Could not build the network client. Report this at https://github.com/ohaswin/pyscan/issues");
         None
     }
 }
