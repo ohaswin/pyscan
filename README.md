@@ -1,20 +1,22 @@
 <h1 align="center"> 🐍 Pyscan </h1>
 
-![CI](https://github.com/ohaswin/pyscan/actions/workflows/CI.yml/badge.svg) ![Liscense](https://img.shields.io/github/license/ohaswin/pyscan?color=ff64b4) [![PyPI](https://img.shields.io/pypi/v/pyscan-rs?color=ff69b4)](https://pypi.org/project/pyscan-rs) [![](https://img.shields.io/crates/v/pyscan?color=ff64b4)](https://crates.io/crates/pyscan) [![GitHub issues](https://img.shields.io/github/issues/ohaswin/pyscan.svg?color=ff69b4)](https://GitHub.com/ohaswin/pyscan/issues/) [![Top Language](https://img.shields.io/github/languages/top/ohaswin/pyscan?color=ff69b4)](https://img.shields.io/github/languages/top/ohaswin/pyscan)
+![CI](https://github.com/ohaswin/pyscan/actions/workflows/CI.yml/badge.svg) ![Liscense](https://img.shields.io/github/license/ohaswin/pyscan?color=ff64b4) [![PyPI](https://img.shields.io/pypi/v/pyscan-rs?color=ff69b4)](https://pypi.org/project/pyscan-rs) [![](https://img.shields.io/crates/v/pyscan?color=ff64b4)](https://crates.io/crates/pyscan) [![GitHub issues](https://img.shields.io/github/issues/ohaswin/pyscan.svg?color=ff69b4)](https://GitHub.com/ohaswin/pyscan/issues/) [![Top Language](https://img.shields.io/github/languages/top/ohaswin/pyscan?color=ff69b4)](https://img.shields.io/github/languages/top/ohaswin/pyscan) ![Crates.io Total Downloads](https://img.shields.io/crates/d/pyscan?label=crates.io%20downloads) [![PyPI Downloads](https://static.pepy.tech/personalized-badge/pyscan-rs?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=BLUE&left_text=PyPI+downloads)](https://pepy.tech/projects/pyscan-rs)
+
 
 <h4 align="center"> 
 
 <!-- <img src="https://media.discordapp.net/attachments/1002212458502557718/1107648562004758538/pyscan.png?width=779&height=206"> -->
 
-<img src="./assets/2pyscan-repository.png">
+<img src="./assets/pyscan.png">
 
 </h4>
 
-<h5 align="center"> <i>A dependency vulnerability scanner for your python projects, straight from the terminal.</i> </h5>
+<h5 align="center"> <i>A simple tool for gathering and reporting vulnerabilities in your projects.</i> </h5>
 
 + can be used within large projects. (see [benchmarks](BENCHMARKS.md))
 + automatically finds dependencies either from configuration files or within source code.
 + support for poetry,hatch,filt,pdm and can be integrated into existing build processes.
++ relies on vulnerabilities from the Open Source Vulnerabilities ([osv.dev](https://osv.dev/)) database for its reporting
 + hasn't been battle-hardened yet. PRs and issue makers welcome.
 
 ## 🕊️ Install
@@ -83,11 +85,10 @@ As of December 24, 2024:
 - [ ] Persistent state representation of a project's security.
 - [ ] Graphical analysis of dependencies and their dependencies, and so on.
 - [ ] Better display, search, filter of vulns  
-- [ ] Finish the "big" update (All of the above is a part of PR #17)
 
 ## 🐹 Donate
 
-While not coding, I am a broke ~~high school~~ college student with nothing else to do. I appreciate all the help I can get.
+I started this project when I was a broke high school student, now I'm a broke college student. Consider donating:
 
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Z8Z74DCR4)
