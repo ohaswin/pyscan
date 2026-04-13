@@ -32,12 +32,12 @@ impl Osv {
         let pyscan_version = format!("pyscan {}", version);
         let client = reqwest::Client::builder()
             .user_agent(pyscan_version)
+            .timeout(std::time::Duration::from_secs(30))
             .build()
             .map_err(|e| PyscanError::Osv(format!("Could not build the network client: {e}")))?;
 
         client.get("https://osv.dev").send().await
             .map_err(|e| PyscanError::Osv(format!("Could not connect to the OSV website. Check your internet or try again: {e}")))?;
-
         Ok(Osv {
             online: true,
             last_queried: utils::get_time(),

@@ -9,6 +9,7 @@ use std::{
     collections::HashMap,
     io::{self, Error, ErrorKind},
     str::{self},
+    time,
 };
 use dirs;
 
@@ -59,6 +60,7 @@ pub fn get_vuln_ignores() -> Vec<String> {
 pub async fn _reqwest_send(method: &str, url: String) -> crate::error::Result<Response> {
     let client = reqwest::Client::builder()
         .user_agent(format!("pyscan v{}", get_version()))
+        .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| PyscanError::Network { source: e })?;
 
@@ -112,7 +114,11 @@ pub fn get_python_package_version(package: &str) -> Result<String, PyscanError> 
 pub async fn get_package_version_pypi(package: &str) -> Result<String, PyscanError> {
     let url = format!("https://pypi.org/pypi/{package}/json");
 
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| PyscanError::Pypi(e.to_string()))?;
+
     let response = client.get(&url)
         .send().await
         .map_err(|e| PyscanError::Pypi(e.to_string()))?
