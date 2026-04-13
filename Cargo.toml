@@ -13,10 +13,18 @@ categories = ["command-line-utilities"]
 
 
 [dependencies]
+# --- Rich CLI ---
+comfy-table = "7"
+indicatif = "0.17"
+miette = { version = "7", features = ["fancy"] }
+is-terminal = "0.4"
+nu-ansi-term = "0.50"
+
+# --- Core ---
 openssl = { version = "0.10", features = ["vendored"] }
 chrono = "0.4.24"
 clap = {version="4.2.1", features=["derive"]}
-console = "0.15.5"
+console = "0.15.5"  # TODO: remove after confirming no remaining usages
 pep-508 = "0.3.0"
 regex = "1.7.3"
 reqwest = {version="0.11.16"}

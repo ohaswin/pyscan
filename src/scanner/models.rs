@@ -19,35 +19,17 @@ pub struct Vuln {
     #[serde(rename = "id")]
     pub id: String,
 
-    // #[serde(rename = "summary")]
-    // pub summary: Option<String>,
-
     #[serde(rename = "details")]
     pub details: String,
-
-    // #[serde(rename = "aliases")]
-    // pub aliases: Vec<String>,
-
-    // #[serde(rename = "modified")]
-    // pub modified: String,
-
-    // #[serde(rename = "published")]
-    // pub published: String,
-
-    // #[serde(rename = "database_specific")]
-    // pub database_specific: Option<VulnDatabaseSpecific>,
-
-    // #[serde(rename = "references")]
-    // pub references: Vec<Reference>,
 
     #[serde(rename = "affected")]
     pub affected: Vec<Affected>,
 
-    // #[serde(rename = "schema_version")]
-    // pub schema_version: String,
+    #[serde(default, rename = "severity")]
+    pub severity: Option<Vec<Severity>>,
 
-    // #[serde(rename = "severity")]
-    // pub severity: Option<Vec<Severity>>,
+    #[serde(default, rename = "database_specific")]
+    pub database_specific: Option<VulnDatabaseSpecific>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,17 +37,11 @@ pub struct Affected {
     #[serde(rename = "package")]
     pub package: Package,
 
-    // #[serde(rename = "ranges")]
-    // pub ranges: Vec<Range>,
+    #[serde(default, rename = "ranges")]
+    pub ranges: Option<Vec<Range>>,
 
     #[serde(rename = "versions")]
     pub versions: Option<Vec<String>>,
-
-    // #[serde(rename = "database_specific")]
-    // pub database_specific: AffectedDatabaseSpecific,
-
-    // #[serde(rename = "ecosystem_specific")]
-    // pub ecosystem_specific: Option<EcosystemSpecific>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

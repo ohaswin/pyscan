@@ -1,4 +1,3 @@
-use console::style;
 use std::collections::HashMap;
 use std::ffi::OsString;
 
@@ -115,16 +114,16 @@ impl VersionStatus {
         }
 
         if let Ok(v) = utils::get_python_package_version(name) {
-            println!("{} : {}",style(name).yellow().dim(), style("A version could not be detected in the source file, so retrieving version from pip instead.").dim());
+            println!("\x1b[33;2m{}\x1b[0m : \x1b[2mA version could not be detected in the source file, so retrieving version from pip instead.\x1b[0m",name);
             return v;
         }
 
         if let Ok(v) = utils::get_package_version_pypi(name).await {
-            println!("{} : {}",style(name).red().dim(), style("A version could not be detected through source or pip, so retrieving latest version from pypi.org instead.").dim());
+            println!("\x1b[31;2m{}\x1b[0m : \x1b[2mA version could not be detected through source or pip, so retrieving latest version from pypi.org instead.\x1b[0m",name);
             return v;
         }
 
-        eprintln!("A version could not be retrieved for {}. This should not happen as pyscan defaults pip or pypi.org, unless:\n1) Pip is not installed\n2) You don't have an internet connection\n3) You did not anticipate the consequences of not specifying a version for your dependency in the configuration files.\nReach out on github.com/ohaswin/pyscan/issues if the above cases did not take place.", style(name).bright().red());
+        eprintln!("A version could not be retrieved for \x1b[1;91m{}\x1b[0m. This should not happen as pyscan defaults pip or pypi.org, unless:\n1) Pip is not installed\n2) You don't have an internet connection\n3) You did not anticipate the consequences of not specifying a version for your dependency in the configuration files.\nReach out on github.com/ohaswin/pyscan/issues if the above cases did not take place.", name);
         String::new()
     }
 }

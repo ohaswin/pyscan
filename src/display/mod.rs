@@ -1,161 +1,146 @@
+mod table;
+mod card;
+pub mod diagnostic;
+pub mod progress;
+pub mod theme;
+
 use crate::parser::structs::ScannedDependency;
-use console::{style, Term};
-use std::sync::LazyLock;
 use std::collections::HashMap;
+use std::time::Duration;
+use theme::{detect_output_mode, OutputMode, classify_severity, is_tty, SeverityLevel};
 
-static CONS: LazyLock<Term> = LazyLock::new(Term::stdout);
+// Re-export for scanner module
+pub use progress::{create_scan_progress, finish_progress};
 
-pub struct Progress {
-    pub count: usize,
-    current_displayed: usize,
+/// Source file context for diagnostic rendering.
+/// Carries the original file path and content so miette can
+/// produce source-annotated vulnerability reports.
+#[derive(Debug, Clone)]
+pub struct SourceContext {
+    pub file_path: String,
+    pub content: String,
 }
 
-impl Progress {
-    pub fn new() -> Progress {
-        Progress {
-            count: 0,
-            current_displayed: 0,
-        }
-    }
-    pub fn display(&mut self) {
-        if self.count > 1 {
-            let _ = CONS.clear_last_lines(1);
-        }
-
-        if self.count > self.current_displayed {
-            let _ = CONS.write_line(
-                format!(
-                    "Found {} vulnerabilities so far",
-                    style(self.count).bold().bright().red()
-                )
-                .as_str(),
-            );
-            self.current_displayed = self.count;
-        }
-    }
-
-    pub fn count_one(&mut self) {
-        self.count += 1;
-    }
-    pub fn end(&mut self) {
-        let _ = CONS.clear_last_lines(1);
-    }
-}
-
-pub fn display_queried(
+/// Main display entry point — replaces `display_queried()` and `display_summary()`.
+///
+/// Renders:
+/// 1. Results table (vulnerable + safe dependencies)
+/// 2. Diagnostic detail cards per vulnerability (with source snippets if available)
+/// 3. Summary card with risk level, dep count, and scan time
+pub fn display_results(
     collected: &[ScannedDependency],
     imports_info: &mut HashMap<String, String>,
+    source: Option<&SourceContext>,
+    scan_duration: Duration,
 ) {
-    // --- displaying query result starts here ---
-    for dep in collected {
-        let _ = CONS.write_line(
-            format!(
-                "|-| {} [{}]{:^5}",
-                style(dep.name.as_str()).bold().bright().yellow(),
-                style(dep.version.as_str()).bold().dim(),
-                style(" -> Found vulnerabilities!").bold().bright().red()
-            )
-            .as_str(),
-        );
-    }
+    let mode = detect_output_mode();
 
-    // remove the deps with vulns from import_info so what remains is the safe deps
+    // Separate safe deps by removing vulnerable ones from import_info
     for d in collected.iter() {
         imports_info.remove(d.name.as_str());
     }
+    let safe_count = imports_info.len();
 
-    for (k, v) in imports_info.iter() {
-        let _ = CONS.write_line(
-            format!(
-                "|-| {} [{}]{}",
-                style(k.as_str()).bold().bright().yellow(),
-                style(v.as_str()).bold().dim(),
-                style(" -> No vulnerabilities found.")
-                    .bold()
-                    .bright()
-                    .green()
-            )
-            .as_str(),
-        );
+    let total_deps = collected.len() + safe_count;
+    let risk = overall_risk(collected);
+
+    match mode {
+        OutputMode::Rich => render_rich(collected, safe_count, source, total_deps, scan_duration, &risk),
+        OutputMode::Plain => render_plain(collected, safe_count, total_deps, scan_duration, &risk),
     }
-    let _ = display_summary(collected);
 }
 
-pub fn display_summary(collected: &[ScannedDependency]) -> std::io::Result<()> {
-    if !collected.is_empty() {
-        CONS.write_line(&format!(
-            "{}",
-            style("SUMMARY").bold().yellow().underlined()
-        ))?;
-        for v in collected {
-            for vuln in &v.vuln.vulns {
-                let name = format!(
-                    "Dependency: {}",
-                    style(v.name.clone()).bold().bright().red()
-                );
+/// Rich TTY rendering — tables, diagnostics, summary card.
+fn render_rich(
+    collected: &[ScannedDependency],
+    safe_count: usize,
+    source: Option<&SourceContext>,
+    total_deps: usize,
+    scan_duration: Duration,
+    risk: &SeverityLevel,
+) {
+    // 1. Results table (sorted by severity, grouped by dep)
+    let tbl = table::build_results_table(collected);
+    println!("\n{tbl}\n");
 
-                CONS.write_line(name.as_str())?;
-                CONS.flush()?;
+    if safe_count > 0 && is_tty() {
+        println!("  \x1b[32;2m✔ {} safe dependencies not shown\x1b[0m\n", safe_count);
+    }
 
-                let id = format!("ID: {}", style(vuln.id.as_str()).bold().bright().yellow());
-                CONS.write_line(id.as_str())?;
-                CONS.flush()?;
-
-                let details = format!("Details: {}", style(vuln.details.as_str()).italic());
-                CONS.write_line(details.as_str())?;
-                CONS.flush()?;
-
-                let vers: Vec<Vec<String>> = vuln
-                    .affected
-                    .iter()
-                    .map(|affected| {
-                        vec![
-                            {
-                                if let Some(v) = &affected.versions {
-                                    v.first().unwrap().to_string()
-                                } else {
-                                    "This version".to_string()
-                                }
-                            },
-                            {
-                                if let Some(v) = &affected.versions {
-                                    v.last().unwrap().to_string()
-                                } else {
-                                    "Unknown".to_string()
-                                }
-                            },
-                        ]
-                    })
-                    .collect();
-
-                let version = format!(
-                    "Versions affected: {} to {}",
-                    style(
-                        vers.first()
-                            .expect("No version found affected")
-                            .first()
-                            .unwrap()
-                    )
-                    .dim()
-                    .underlined(),
-                    style(
-                        vers.last()
-                            .expect("No version found affected")
-                            .last()
-                            .unwrap()
-                    )
-                    .dim()
-                    .underlined()
-                );
-
-                println!();
-
-                CONS.write_line(version.as_str())?;
-                CONS.flush()?;
+    // 2. Diagnostic detail cards (sorted in same order as the table)
+    if let Some(src) = source {
+        let sorted = table::sorted_vuln_indices(collected);
+        for (_severity, di, vi) in &sorted {
+            let dep = &collected[*di];
+            let vuln = &dep.vuln.vulns[*vi];
+            let fixed = diagnostic::extract_fixed_version(vuln);
+            if let Some(report) = diagnostic::build_diagnostic(
+                vuln,
+                &src.file_path,
+                &src.content,
+                &dep.name,
+                &fixed,
+            ) {
+                // miette renders to stderr by convention (like compiler diagnostics)
+                eprintln!("{:?}", report);
             }
         }
-    } else {
-        println!("Finished scanning all found dependencies.");
     }
-    Ok(())
+
+    // 3. Summary card
+    let summary = card::ScanSummary {
+        total_deps,
+        vuln_count: collected.len(),
+        scan_duration,
+        risk_level: risk.clone(),
+    };
+    println!("{}", summary.render());
+}
+
+/// Plain non-TTY rendering — tab-separated, grep-able output.
+fn render_plain(
+    collected: &[ScannedDependency],
+    safe_count: usize,
+    total_deps: usize,
+    scan_duration: Duration,
+    risk: &SeverityLevel,
+) {
+    // Output sorted by severity (same order as TTY table)
+    let sorted = table::sorted_vuln_indices(collected);
+    for (_severity, di, vi) in &sorted {
+        let dep = &collected[*di];
+        let vuln = &dep.vuln.vulns[*vi];
+        let sev = classify_severity(vuln);
+        let fixed = diagnostic::extract_fixed_version(vuln);
+        println!(
+            "{}\t{}\t{}\t{}\t{}",
+            sev.label(),
+            dep.name,
+            dep.version,
+            fixed,
+            vuln.id
+        );
+    }
+
+    if safe_count > 0 {
+        println!("{} safe dependencies not shown", safe_count);
+    }
+
+    let summary = card::ScanSummary {
+        total_deps,
+        vuln_count: collected.len(),
+        scan_duration,
+        risk_level: risk.clone(),
+    };
+    println!("{}", summary.render());
+}
+
+/// Determine overall risk from the worst severity found across all vulns.
+fn overall_risk(collected: &[ScannedDependency]) -> SeverityLevel {
+    collected
+        .iter()
+        .flat_map(|d| d.vuln.vulns.iter())
+        .map(|v| classify_severity(v))
+        .min() // SeverityLevel derives Ord: Critical < High < Medium < Low < Unknown
+        .unwrap_or(SeverityLevel::Unknown)
 }

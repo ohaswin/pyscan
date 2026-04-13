@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand};
-use console::style;
 use std::sync::{LazyLock, OnceLock};
 use std::{path::PathBuf, process::exit};
 use utils::{PipCache, SysInfo};
@@ -139,29 +138,42 @@ async fn run() -> error::Result<()> {
             };
 
             let vdep = vec![dep];
-            scanner::start(vdep).await?;
+            scanner::start(vdep, None).await?;
             return Ok(());
         }
         Some(SubCommand::Docker { name, path }) => {
-            println!(
-                "{} {}\n{} {}",
-                style("Docker image:").yellow().blink(),
-                style(name.clone()).bold().green(),
-                style("Path inside container:").yellow().blink(),
-                style(path.to_string_lossy()).bold().green()
-            );
-            println!("{}",
-                style("--- Make sure you run the command with elevated permissions (sudo/administrator) as pyscan might have trouble accessing files inside docker containers ---").dim());
+            if display::theme::is_tty() {
+                println!(
+                    "  \x1b[33mDocker image:\x1b[0m \x1b[1;32m{}\x1b[0m",
+                    name
+                );
+                println!(
+                    "  \x1b[33mPath inside container:\x1b[0m \x1b[1;32m{}\x1b[0m",
+                    path.to_string_lossy()
+                );
+                println!("\x1b[2m  --- Make sure you run the command with elevated permissions (sudo/administrator) as pyscan might have trouble accessing files inside docker containers ---\x1b[0m");
+            } else {
+                println!("Docker image: {}", name);
+                println!("Path inside container: {}", path.to_string_lossy());
+            }
             docker::list_files_in_docker_image(name, path.to_path_buf()).await?;
             return Ok(());
         }
         None => (),
     }
 
-    println!(
-        "pyscan v{} | by Aswin (https://github.com/ohaswin)",
-        get_version()
-    );
+    if display::theme::is_tty() {
+        println!(
+            "\x1b[1m  pyscan\x1b[0m v{} \x1b[2m│\x1b[0m by Aswin (https://github.com/ohaswin)",
+            get_version()
+        );
+        println!("  \x1b[2m─────────────────────────────────────────────────────\x1b[0m");
+    } else {
+        println!(
+            "pyscan v{} | by Aswin (https://github.com/ohaswin)",
+            get_version()
+        );
+    }
 
     let sys_info = SysInfo::new().await;
 

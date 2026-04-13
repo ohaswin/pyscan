@@ -8,11 +8,12 @@ use crate::{
 };
 use reqwest::{self, Client, Method};
 use futures::future;
-use std::{fs, env};
+use std::{fs, env, time::Instant};
 use super::{
     super::utils,
     models::{Query, QueryBatched, QueryResponse},
 };
+use display::SourceContext;
 
 /// OSV provides a distributed database for vulns, with a free API
 #[derive(Debug)]
@@ -55,7 +56,7 @@ impl Osv {
         Ok(self._get_json(d.name.as_str(), &version).await)
     }
 
-    pub async fn query_batched(&self, mut deps: Vec<Dependency>) -> crate::error::Result<Vec<ScannedDependency>> {
+    pub async fn query_batched(&self, mut deps: Vec<Dependency>, source: Option<SourceContext>) -> crate::error::Result<Vec<ScannedDependency>> {
         // Resolve missing versions in parallel
         let _ = future::join_all(deps
             .iter_mut()
@@ -67,7 +68,8 @@ impl Osv {
                 }
             })).await;
 
-        let mut progress = display::Progress::new();
+        let bar = display::create_scan_progress(deps.len());
+        let scan_start = Instant::now();
 
         let imports_info = utils::vecdep_to_hashmap(&deps);
 
@@ -141,8 +143,7 @@ impl Osv {
                 .collect();
 
                 let structvuln = Vulnerability { vulns: vecvulns };
-                progress.count_one();
-                progress.display();
+                if let Some(ref b) = bar { b.inc(1); }
 
                 if structvuln.vulns.is_empty() {
                     continue;
@@ -151,12 +152,17 @@ impl Osv {
             }
         }
 
-        if progress.count > 0 {
-            progress.end()
-        }
+        display::finish_progress(bar, scanneddeps.len());
+
+        let scan_duration = scan_start.elapsed();
 
         // --- passing to display module starts here ---
-        display::display_queried(&scanneddeps, &mut imports_info);
+        display::display_results(
+            &scanneddeps,
+            &mut imports_info,
+            source.as_ref(),
+            scan_duration,
+        );
         Ok(scanneddeps)
     }
 
