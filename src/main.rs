@@ -1,11 +1,11 @@
 use clap::{Parser, Subcommand};
 use console::style;
-use once_cell::sync::Lazy;
-use std::sync::OnceLock;
+use std::sync::{LazyLock, OnceLock};
 use std::{path::PathBuf, process::exit};
 use utils::{PipCache, SysInfo};
 mod display;
 mod docker;
+mod error;
 mod parser;
 mod scanner;
 mod utils;
@@ -19,7 +19,7 @@ use tokio::task;
 #[derive(Parser, Debug)]
 #[command(
     author = "ohaswin",
-    version = "0.1.8",
+    version = "2.0.0",
     about = "python dependency vulnerability scanner.\n\ndo 'pyscan [subcommand] --help' for specific help."
 )]
 struct Cli {
@@ -36,8 +36,6 @@ struct Cli {
     subcommand: Option<SubCommand>,
 
     /// skip: skip the given databases
-    /// ex. pyscan -s osv snyk
-    /// hidden due to only having one database for now.
     #[arg(
         short,
         long,
@@ -47,9 +45,7 @@ struct Cli {
     )]
     skip: Vec<String>,
 
-    /// show the version and information about a package from all available sources. (does not search for vulns, use 'package' subcommand for that).
-    /// usage: pyscan show requests pyscan-rs lxml koda
-    /// hidden due to unfinished
+    /// show the version and information about a package from all available sources.
     #[arg(
         long,
         value_delimiter = ' ',
@@ -70,7 +66,7 @@ struct Cli {
     #[arg(long="cache-off", required=false,action=clap::ArgAction::SetTrue)]
     cache_off: bool,
 
-    /// ignores the given vuln IDs (from OSV) seperated by spaces
+    /// ignores the given vuln IDs (from OSV) separated by spaces
     #[arg(
         long,
         short = 'i',
@@ -82,7 +78,6 @@ struct Cli {
     /// ignore .pyscanignore file (anywhere), reports all vulnerabilities found.
     #[arg(long, short, action=clap::ArgAction::SetTrue, default_value_t = false)]
     pedantic: bool,
-
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -110,32 +105,26 @@ enum SubCommand {
     },
 }
 
-static ARGS: Lazy<OnceLock<Cli>> = Lazy::new(|| OnceLock::from(Cli::parse()));
+static ARGS: LazyLock<OnceLock<Cli>> = LazyLock::new(|| OnceLock::from(Cli::parse()));
 
-// Why is the args a static variable? Some arguments need to be seen by other files in the codebase
-// such as --pip or --pypi due to different use cases. Args only get wrote to once so it shouldn't pose a problem (Reason its OnceLock'ed).
-// Why is it Lazy? Something about a non-const fn in a const world. Pretty surprised to see the compiler recommend an outside crate for this issue.
+static PIPCACHE: LazyLock<PipCache> = LazyLock::new(|| utils::PipCache::init());
 
-static PIPCACHE: Lazy<PipCache> = Lazy::new(|| utils::PipCache::init());
-// is a hashmap of (package name, version) from 'pip list'
-// because calling 'pip show' everytime might get expensive if there are a lot of dependencies to check.
-
-static VULN_IGNORE: Lazy<Vec<String>> = Lazy::new(|| { utils::get_vuln_ignores() });
-// vuln IDs
+static VULN_IGNORE: LazyLock<Vec<String>> = LazyLock::new(|| utils::get_vuln_ignores());
 
 #[tokio::main]
 async fn main() {
+    if let Err(e) = run().await {
+        eprintln!("{e}");
+        exit(1);
+    }
+}
+
+async fn run() -> error::Result<()> {
     match &ARGS.get().unwrap().subcommand {
-        // subcommand package
         Some(SubCommand::Package { name, version }) => {
-            // let osv = Osv::new().expect("Cannot access the API to get the latest package version.");
-            let version = if let Some(v) = version {
-                v.to_string()
-            } else {
-                utils::get_package_version_pypi(name.as_str())
-                    .await
-                    .expect("Error in retrieving stable version from API")
-                    .to_string()
+            let version = match version {
+                Some(v) => v.clone(),
+                None => utils::get_package_version_pypi(name.as_str()).await?,
             };
 
             let dep = Dependency {
@@ -149,11 +138,9 @@ async fn main() {
                 },
             };
 
-            // start() from scanner only accepts Vec<Dependency> so
             let vdep = vec![dep];
-
-            let _res = scanner::start(vdep).await;
-            exit(0)
+            scanner::start(vdep).await?;
+            return Ok(());
         }
         Some(SubCommand::Docker { name, path }) => {
             println!(
@@ -164,11 +151,9 @@ async fn main() {
                 style(path.to_string_lossy()).bold().green()
             );
             println!("{}",
-        style("--- Make sure you run the command with elevated permissions (sudo/administrator) as pyscan might have trouble accessing files inside docker containers ---").dim());
-            docker::list_files_in_docker_image(name, path.to_path_buf())
-                .await
-                .expect("Error in scanning files from Docker image.");
-            exit(0)
+                style("--- Make sure you run the command with elevated permissions (sudo/administrator) as pyscan might have trouble accessing files inside docker containers ---").dim());
+            docker::list_files_in_docker_image(name, path.to_path_buf()).await?;
+            return Ok(());
         }
         None => (),
     }
@@ -179,32 +164,21 @@ async fn main() {
     );
 
     let sys_info = SysInfo::new().await;
-    // supposed to be a global static, cant atm because async closures are unstable.
-    // has to be ran in diff thread due to underlying blocking functions, to be fixed soon.
 
     task::spawn(async move {
-        // init pip cache, if cache-off is false or pip has been found
         if !&ARGS.get().unwrap().cache_off | sys_info.pip_found {
             let _ = PIPCACHE.lookup(" ");
-            // since its in Lazy its first accesss would init the cache, the result is ignorable.
         }
-        // has to be run on another thread to not block user functionality
-        // it still blocks because i cant make pip_list() async or PIPCACHE would fail
-        // as async closures aren't stable yet.
-        // but it removes a 3s delay, for now.
     });
 
     // --- giving control to parser starts here ---
-
-    // if a directory path is provided
     if let Some(dir) = &ARGS.get().unwrap().dir {
-        parser::scan_dir(dir.as_path()).await
-    }
-    // if not, use cwd
-    else if let Ok(dir) = env::current_dir() {
-        parser::scan_dir(dir.as_path()).await
+        parser::scan_dir(dir.as_path()).await?;
+    } else if let Ok(dir) = env::current_dir() {
+        parser::scan_dir(dir.as_path()).await?;
     } else {
-        eprintln!("the given directory is empty.");
-        exit(1)
-    }; // err when dir is empty
+        return Err(error::PyscanError::Parser("the given directory is empty.".to_string()));
+    }
+
+    Ok(())
 }

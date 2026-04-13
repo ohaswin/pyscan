@@ -916,16 +916,14 @@ dependencies = [
 
 [[package]]
 name = "pyscan"
-version = "0.1.8"
+version = "2.0.0"
 dependencies = [
  "chrono",
  "clap",
  "console",
  "dirs",
  "futures",
- "lazy_static",
  "lenient_semver",
- "once_cell",
  "openssl",
  "pep-508",
  "regex",
@@ -933,6 +931,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "thiserror",
  "tokio",
  "toml",
 ]
@@ -1131,6 +1130,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "signal-hook-registry"
+version = "1.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
+dependencies = [
+ "errno",
+ "libc",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1250,6 +1259,7 @@ dependencies = [
  "mio",
  "num_cpus",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.48.0",

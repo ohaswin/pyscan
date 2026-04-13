@@ -1,23 +1,20 @@
-use std::process::exit;
-
 /// for the parser module, extractor.rs is the backbone of all parsing
 /// it takes a String and a mutable reference to a Vec<Dependency>.
 /// String is the contents of a source file, while the mut ref vector will
 /// be used to collect the dependencies that we have extracted from the contents.
 use super::structs::{Dependency, VersionStatus};
 
-use lazy_static::lazy_static;
 use pep_508::{self, Spec};
 use regex::Regex;
+use std::sync::LazyLock;
 
 use toml::{de::Error, Table, Value};
 
-pub fn extract_imports_python(text: String, imp: &mut Vec<Dependency>) {
-    lazy_static! {
-        static ref IMPORT_REGEX: Regex =
-            Regex::new(r"^\s*(?:from|import)\s+(\w+(?:\s*,\s*\w+)*)").unwrap();
-    }
+static IMPORT_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\s*(?:from|import)\s+(\w+(?:\s*,\s*\w+)*)").unwrap()
+});
 
+pub fn extract_imports_python(text: String, imp: &mut Vec<Dependency>) {
     for x in IMPORT_REGEX.find_iter(&text) {
         let mat = x.as_str().to_string();
         let mat = mat.replacen("import", "", 1).trim().to_string();
@@ -37,18 +34,14 @@ pub fn extract_imports_python(text: String, imp: &mut Vec<Dependency>) {
 
 pub fn extract_imports_reqs(text: String, imp: &mut Vec<Dependency>) {
     // requirements.txt uses a PEP 508 parser to parse dependencies accordingly
-    // you might think its just a text file, but I'm gonna decline reinventing the wheel
-    // just to parse "requests >= 2.0.8"
 
     let parsed = pep_508::parse(text.as_str());
 
     if let Ok(ref dep) = parsed {
         let dname = dep.name.to_string();
-        // println!("{:?}", parsed.clone());
         if let Some(ver) = &dep.spec {
             if let Spec::Version(verspec) = ver {
                 if let Some(v) = verspec.iter().next() {
-                    // pyscan only takes the first version spec found for the dependency
                     let version = v.version.to_string();
                     let comparator = v.comparator;
                     imp.push(Dependency {
@@ -80,57 +73,6 @@ pub fn extract_imports_reqs(text: String, imp: &mut Vec<Dependency>) {
     }
 }
 
-// pub fn extract_imports_pyproject(f: String, imp: &mut Vec<Dependency>) {
-//     let parsed = f.parse::<Table>();
-//     if let Ok(parsed) = parsed {
-//         let project = &parsed["project"];
-//         let deps = &project["dependencies"];
-//         let deps = deps
-//             .as_array()
-//             .expect("Could not find the dependencies table in your pyproject.toml");
-//         for d in deps {
-//             let d = d.as_str().unwrap();
-//             let parsed = pep_508::parse(d);
-//             if let Ok(dep) = parsed {
-//                 let dname = dep.name.to_string();
-//                 // println!("{:?}", dep.clone());
-//                 if let Some(ver) = dep.spec {
-//                     if let Spec::Version(verspec) = ver {
-//                         for v in verspec {
-//                             // pyscan only takes the first version spec found for the dependency
-//                             // for now.
-//                             let version = v.version.to_string();
-//                             let comparator = v.comparator;
-//                             imp.push(Dependency {
-//                                 name: dname,
-//                                 version: Some(version),
-//                                 comparator: Some(comparator),
-//                                 version_status: VersionStatus {
-//                                     pypi: false,
-//                                     pip: false,
-//                                     source: true,
-//                                 },
-//                             });
-//                             break;
-//                         }
-//                     }
-//                 } else {
-//                     imp.push(Dependency {
-//                         name: dname,
-//                         version: None,
-//                         comparator: None,
-//                         version_status: VersionStatus {
-//                             pypi: false,
-//                             pip: false,
-//                             source: false,
-//                         },
-//                     });
-//                 }
-//             }
-//         }
-//     }
-// }
-
 pub fn extract_imports_setup_py(setup_py_content: &str, imp: &mut Vec<Dependency>) {
     let mut deps = Vec::new();
 
@@ -139,7 +81,6 @@ pub fn extract_imports_setup_py(setup_py_content: &str, imp: &mut Vec<Dependency
 
     for cap in re.captures_iter(setup_py_content) {
         if let Some(matched) = cap.get(1) {
-            // Split the matched text by ',' and trim whitespace
             deps.extend(
                 matched
                     .as_str()
@@ -157,8 +98,6 @@ pub fn extract_imports_setup_py(setup_py_content: &str, imp: &mut Vec<Dependency
             if let Some(ver) = dep.spec {
                 if let Spec::Version(verspec) = ver {
                     if let Some(v) = verspec.first() {
-                        // pyscan only takes the first version spec found for the dependency
-                        // for now.
                         let version = v.version.to_string();
                         let comparator = v.comparator;
                         imp.push(Dependency {
@@ -193,9 +132,7 @@ pub fn extract_imports_pyproject(
     toml_content: String,
     imp: &mut Vec<Dependency>,
 ) -> Result<(), Error> {
-    // Parse the toml content into a Value
     let toml_value: Value = toml::from_str(toml_content.as_str())?;
-    // println!("{:#?}",toml_value);
 
     // Helper function to extract dependency values (version strings) including nested tables
     fn extract_dependencies(
@@ -204,9 +141,6 @@ pub fn extract_imports_pyproject(
     ) -> Result<Vec<String>, Error> {
         let mut deps = Vec::new();
 
-        // for [project] in pyproject.toml, the insides require a different sort of parsing
-        // for poetry you need both keys and values (as dependency name and version),
-        // for [project] the values are just enough and the keys are in the vec below
         let projectlevel: Vec<&str> = vec![
             "dependencies",
             "optional-dependencies.docs",
@@ -223,13 +157,11 @@ pub fn extract_imports_pyproject(
                         if "optional-dependencies" == key {
                             parse_opt_deps_pyproject(nested_table.clone(), &mut deps);
                         } else {
-                            // Recursively extract dependencies from nested tables
                             let nested_deps = extract_dependencies(nested_table, None)?;
                             deps.extend(nested_deps);
                         }
                     }
                     Value::Array(array) => {
-                        // Extract dependencies from an array (if any)
                         for item in array {
                             if let Value::String(item_str) = item {
                                 deps.push(item_str.to_string());
@@ -250,12 +182,10 @@ pub fn extract_imports_pyproject(
                         }
                     }
                     Value::Table(nested_table) => {
-                        // Recursively extract dependencies from nested tables
                         let nested_deps = extract_dependencies(nested_table, None)?;
                         deps.extend(nested_deps);
                     }
                     Value::Array(array) => {
-                        // Extract dependencies from an array (if any)
                         for item in array {
                             if let Value::String(item_str) = item {
                                 deps.push(item_str.to_string());
@@ -272,7 +202,6 @@ pub fn extract_imports_pyproject(
     // Extract dependencies from different sections
     let mut all_dependencies = Vec::new();
 
-    // Look for keys like "dependencies" and "optional-dependencies"
     let keys_to_check = vec!["project", "optional-dependencies", "tool"];
 
     for key in keys_to_check {
@@ -287,13 +216,14 @@ pub fn extract_imports_pyproject(
                                     all_dependencies
                                         .extend(extract_dependencies(table, Some(true))?);
                                 }
-                                // its definitely gonna be a table anyway, so...
-                                Value::String(_) => todo!(),
-                                Value::Integer(_) => todo!(),
-                                Value::Float(_) => todo!(),
-                                Value::Boolean(_) => todo!(),
-                                Value::Datetime(_) => todo!(),
-                                Value::Array(_) => todo!(),
+                                // Poetry [tool.poetry.dependencies] can contain non-table
+                                // values like `python = "^3.8"` — skip them silently
+                                other => {
+                                    eprintln!(
+                                        "Skipping unexpected TOML value type in poetry dependencies: {:?}",
+                                        other.type_str()
+                                    );
+                                }
                             }
                         }
                     }
@@ -309,14 +239,13 @@ pub fn extract_imports_pyproject(
             }
         } else {
             eprintln!(
-                "The pyproject.toml seen here is unlike of a python project. Please check and make
-            sure you are in the right directory, or check the toml file."
+                "The pyproject.toml seen here is unlike of a python project. Please check and make sure you are in the right directory, or check the toml file."
             );
-            exit(1)
+            return Ok(());
         }
     }
-    // the toml might contain repeated dependencies
-    // for different tools, dev tests, etc.
+    // Sort then dedup to correctly remove all duplicates (not just consecutive ones)
+    all_dependencies.sort_unstable();
     all_dependencies.dedup();
 
     for d in all_dependencies {
@@ -363,25 +292,22 @@ pub fn parse_opt_deps_pyproject(table: Table, deps: &mut Vec<String>) {
         match v {
             Value::Array(a) => {
                 for d in a {
-                    match d {
-                        Value::String(dependency) => {
-                            deps.push(dependency.to_owned());
-                        }
-                        Value::Integer(_) => todo!(),
-                        Value::Float(_) => todo!(),
-                        Value::Boolean(_) => todo!(),
-                        Value::Datetime(datetime) => todo!(),
-                        Value::Array(vec) => todo!(),
-                        Value::Table(map) => todo!(),
+                    if let Value::String(dependency) = d {
+                        deps.push(dependency.to_owned());
+                    } else {
+                        eprintln!(
+                            "Skipping unexpected TOML value type in optional-dependencies array: {:?}",
+                            d.type_str()
+                        );
                     }
                 }
             }
-            Value::String(_) => todo!(),
-            Value::Integer(_) => todo!(),
-            Value::Float(_) => todo!(),
-            Value::Boolean(_) => todo!(),
-            Value::Datetime(datetime) => todo!(),
-            Value::Table(map) => todo!(),
+            other => {
+                eprintln!(
+                    "Skipping unexpected TOML value type in optional-dependencies: {:?}",
+                    other.type_str()
+                );
+            }
         }
     }
 }
@@ -427,7 +353,6 @@ pub fn extract_imports_uvlock(
                             .and_then(|v| v.as_str())
                             .map_or(false, |v| v == ".");
                     }
-                    // Also handle inline table string representation
                     if let Some(source_str) = source.as_str() {
                         return source_str.contains("virtual") && source_str.contains(".");
                     }
@@ -450,7 +375,7 @@ pub fn extract_imports_uvlock(
     };
 
     // Collect dependency specifiers from requires-dist and requires-dev
-    let mut dep_specs: Vec<(String, Option<String>)> = Vec::new(); // (name, specifier)
+    let mut dep_specs: Vec<(String, Option<String>)> = Vec::new();
 
     // Parse [package.metadata].requires-dist
     if let Some(metadata) = root_package.get("metadata") {
@@ -501,7 +426,6 @@ pub fn extract_imports_uvlock(
         let (version, comparator) = if let Some(ref spec_str) = specifier {
             parse_uv_specifier(spec_str, &name, &resolved_versions)
         } else {
-            // No specifier — try resolved version from lockfile
             let ver = resolved_versions.get(&name).cloned();
             (ver, None)
         };
@@ -532,7 +456,6 @@ fn parse_uv_specifier(
 ) -> (Option<String>, Option<pep_508::Comparator>) {
     let spec_str = spec_str.trim();
 
-    // Try to parse as PEP 508 comparator + version
     let (comparator, version_str) = if let Some(v) = spec_str.strip_prefix("==") {
         (Some(pep_508::Comparator::Eq), Some(v.trim().to_string()))
     } else if let Some(v) = spec_str.strip_prefix("~=") {
@@ -551,13 +474,9 @@ fn parse_uv_specifier(
         (None, None)
     };
 
-    // For pinned versions (==), use the specifier version directly.
-    // For range specifiers (>=, etc.), prefer the resolved lockfile version
-    // because it represents the actual installed version.
     match comparator {
         Some(pep_508::Comparator::Eq) => (version_str, comparator),
         Some(_) => {
-            // Use resolved version from lockfile if available, otherwise use specifier version
             let resolved = resolved_versions.get(name).cloned().or(version_str);
             (resolved, comparator)
         }

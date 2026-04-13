@@ -1,7 +1,7 @@
 # ARCH_MANIFEST.md — pyscan System Manifest
 
-> **Version**: 0.1.8  
-> **Generated**: 2026-04-13  
+> **Version**: 2.0.0  
+> **Generated**: 2026-04-13 (updated post-refactor)  
 > **Scope**: Single-crate CLI application (`pyscan`) — a Python dependency vulnerability scanner written in Rust.
 
 ---
@@ -28,6 +28,7 @@ pyscan follows a **Pipeline / Staged-Procedural** architecture. Data flows linea
 ```mermaid
 graph TD
     CLI["main.rs<br/><i>CLI Entry Point</i><br/>⚡ Side-Effect"]
+    ERROR["error.rs<br/><i>Unified Error Type</i><br/>🧮 Pure Definitions"]
     PARSER["parser/mod.rs<br/><i>File Discovery & Routing</i><br/>⚡ Side-Effect FS"]
     EXTRACTOR["parser/extractor.rs<br/><i>Dependency Extraction</i><br/>🧮 Near-Pure Logic"]
     STRUCTS["parser/structs.rs<br/><i>Core Data Types</i><br/>🧮 Pure Definitions"]
@@ -36,9 +37,9 @@ graph TD
     MODELS["scanner/models.rs<br/><i>API Serde Models</i><br/>🧮 Pure Definitions"]
     DISPLAY["display/mod.rs<br/><i>Terminal Renderer</i><br/>⚡ Side-Effect IO"]
     UTILS["utils.rs<br/><i>HTTP, Pip, Pypi, Cache</i><br/>⚡ Side-Effect Net/Sub"]
-    DOCKER["docker/mod.rs<br/><i>Docker Integration</i><br/>⚡ Side-Effect Sub/FS"]
+    DOCKER["docker/mod.rs<br/><i>Docker Integration</i><br/>⚡ Side-Effect Async Sub/FS"]
 
-    CLI -->|"scan_dir(path)"| PARSER
+    CLI -->|"run().await"| PARSER
     CLI -->|"SubCommand::Package"| SCANNER
     CLI -->|"SubCommand::Docker"| DOCKER
     PARSER -->|"extract_imports_*()"| EXTRACTOR
@@ -48,12 +49,18 @@ graph TD
     API -->|"deserialize JSON"| MODELS
     API -->|"display::display_queried()"| DISPLAY
     SCANNER -.->|"VersionStatus::choose()"| UTILS
-    API -.->|"vuln_id()"| MODELS
+    API -.->|"vuln_id() parallel"| MODELS
     DOCKER -->|"scan_dir(tmp path)"| PARSER
     CLI -.->|"PipCache, SysInfo"| UTILS
     STRUCTS -.->|"to_query()"| MODELS
+    ERROR -.->|"PyscanError"| CLI
+    ERROR -.->|"PyscanError"| PARSER
+    ERROR -.->|"PyscanError"| SCANNER
+    ERROR -.->|"PyscanError"| UTILS
+    ERROR -.->|"PyscanError"| DOCKER
 
     style CLI fill:#ff6b6b,color:#fff
+    style ERROR fill:#69db7c,color:#fff
     style PARSER fill:#ffa94d,color:#fff
     style EXTRACTOR fill:#69db7c,color:#fff
     style STRUCTS fill:#69db7c,color:#fff
@@ -77,18 +84,20 @@ graph TD
 CLI args parsed (clap)
   │
   ├─ Global statics initialized:
-  │    ARGS: Lazy<OnceLock<Cli>>      ← parsed CLI args, write-once
-  │    PIPCACHE: Lazy<PipCache>       ← HashMap<pkg, ver> from `pip list`
-  │    VULN_IGNORE: Lazy<Vec<String>> ← IDs from .pyscanignore
+  │    ARGS: LazyLock<OnceLock<Cli>>      ← parsed CLI args, write-once
+  │    PIPCACHE: LazyLock<PipCache>       ← HashMap<pkg, ver> from `pip list`
+  │    VULN_IGNORE: LazyLock<Vec<String>> ← IDs from .pyscanignore
   │
-  ├─ SysInfo::new().await             ← checks pip/pypi reachability
+  ├─ run().await                          ← all logic wrapped in Result-returning fn
   │
-  ├─ tokio::task::spawn(cache init)   ← PIPCACHE warm-up on background thread
+  ├─ SysInfo::new().await                 ← checks pip/pypi reachability
   │
-  └─ parser::scan_dir(dir)
+  ├─ tokio::task::spawn(cache init)       ← PIPCACHE warm-up on background thread
+  │
+  └─ parser::scan_dir(dir).await?
        │
-       ├─ fs::read_dir(dir)           ← scan for known file types
-       │    └─ builds FoundFileResult { files: Vec<FoundFile>, counters }
+       ├─ fs::read_dir(dir)               ← scan for known file types
+       │    └─ builds FoundFileResult { files: Vec<FoundFile>, counts: HashMap<FileTypes, u64> }
        │
        ├─ find_import(result)          ← priority dispatch:
        │    │   requirements.txt > constraints.txt > uv.lock > pyproject.toml > setup.py > *.py
@@ -112,7 +121,8 @@ CLI args parsed (clap)
        │              │
        │              ├─ For each result with vulns:
        │              │    ├─ Filter against VULN_IGNORE + --ignorevulns (unless --pedantic)
-       │              │    ├─ Osv::vuln_id(id) → GET /v1/vulns/{id} → Vuln struct
+       │              │    ├─ futures::future::join_all(vuln_id(id)...)  ← PARALLEL fetch
+       │              │    │    └─ GET /v1/vulns/{id} → Vuln struct (concurrent HTTP)
        │              │    └─ Collect into Vec<ScannedDependency>
        │              │
        │              ├─ display::display_queried(&scanneddeps, &mut imports_info)
@@ -127,12 +137,13 @@ CLI args parsed (clap)
 
 | Handoff Point | Mechanism | Why |
 |---|---|---|
-| `ARGS`, `PIPCACHE`, `VULN_IGNORE` | `static Lazy<...>` (write-once globals) | CLI args and pip cache are needed across modules. `OnceLock` guarantees single-write safety without `Mutex`. No `Arc<Mutex<T>>` anywhere. |
+| `ARGS`, `PIPCACHE`, `VULN_IGNORE` | `static LazyLock<..>` (write-once globals) | CLI args and pip cache are needed across modules. `OnceLock` guarantees single-write safety without `Mutex`. No `Arc<Mutex<T>>` anywhere. Uses `std::sync::LazyLock` (Rust 1.80+). |
 | `Vec<Dependency>` from parser → scanner | **Move** (`scanner::start(imports)`) | The parser fully relinquishes the dependency vector. No shared ownership. |
-| `&Vec<FoundFile>` within parser | **Immutable borrow** | `find_*_imports(&files)` borrows the file list; ownership stays with `FoundFileResult`. |
+| `&[FoundFile]` within parser | **Immutable borrow (slice)** | `find_*_imports(&files)` borrows the file list as a slice; ownership stays with `FoundFileResult`. |
 | `&mut Vec<Dependency>` inside extractors | **Mutable borrow** | Extractors push into a caller-owned `Vec` rather than returning a new one. |
-| `ScannedDependency` from scanner → display | **Immutable borrow** (`&Vec<ScannedDependency>`) | Display reads but never owns the data. |
+| `ScannedDependency` from scanner → display | **Immutable borrow** (`&[ScannedDependency]`) | Display reads but never owns the data. |
 | `imports_info` HashMap | **Mutable borrow** (`&mut HashMap`) | Display mutably borrows to `.remove()` vulnerable deps, leaving safe ones for green-printing. |
+| All errors | **`Result<T, PyscanError>`** propagated with `?` | All modules return `crate::error::Result<T>`. Single `exit(1)` in `main()`. |
 
 > **Key finding**: There is **zero** use of `Arc`, `Mutex`, `RwLock`, or `RefCell` in this codebase. All concurrency is expressed through `tokio::spawn` with `move` closures over `Copy`/`Clone` data, or through `futures::future::join_all` on borrowed iterators.
 
@@ -140,14 +151,16 @@ CLI args parsed (clap)
 
 | Component | Model | Details |
 |---|---|---|
-| **Runtime** | `tokio` multi-threaded (`#[tokio::main]`) | Default Tokio scheduler with `rt-multi-thread` feature. |
+| **Runtime** | `tokio` multi-threaded (`#[tokio::main]`) | Default Tokio scheduler with `rt-multi-thread` + `process` features. |
 | **PipCache init** | `tokio::task::spawn` (fire-and-forget) | Runs `pip list` (blocking subprocess!) on a separate Tokio task. Known issue — author notes it "still blocks" because `pip_list()` is sync and async closures aren't stable yet. |
 | **Version resolution** | `futures::future::join_all` | All missing dependency versions are resolved concurrently via async `VersionStatus::choose()` calls. |
-| **OSV batch query** | Single `POST` await | The batch API reduces N queries to 1. Sequential `vuln_id()` calls follow for detail fetching (not parallelized). |
-| **Blocking subprocess calls** | `std::process::Command` (synchronous) | `pip show`, `pip list`, Docker commands are all blocking. They block the Tokio thread — no `spawn_blocking` is used. |
+| **OSV batch query** | Single `POST` await | The batch API reduces N queries to 1. |
+| **Vuln detail fetching** | `futures::future::join_all` (parallel) | All `vuln_id()` calls are dispatched concurrently. For 10 vulns at ~150ms each: ~150ms total vs ~1.5s sequential. |
+| **Docker subprocess calls** | `tokio::process::Command` (async) | Docker `create`, `cp`, `stop`, `rm` commands use async subprocess execution, freeing the Tokio thread pool. |
+| **Pip subprocess calls** | `std::process::Command` (synchronous) | `pip show` and `pip list` remain blocking. `pip_list()` is called from `LazyLock` init (sync context). |
 
-> [!WARNING]
-> **Architecture Risk**: Blocking `Command` calls inside async context without `spawn_blocking` can starve the Tokio thread pool under load.
+> [!NOTE]
+> Docker commands were migrated from blocking `std::process::Command` to async `tokio::process::Command`. Pip commands remain synchronous because `pip_list()` runs from a `LazyLock` initializer (sync context). The remaining `pip show` calls in `get_python_package_version()` are only invoked as a version-resolution fallback.
 
 ---
 
@@ -166,10 +179,9 @@ CLI args parsed (clap)
 | `clap::Parser` | `Cli` | CLI argument parsing |
 | `clap::Subcommand` | `SubCommand` | Subcommand dispatch |
 | `serde::Serialize + Deserialize` | `Query`, `QueryBatched`, `QueryResponse`, `Vulnerability`, `Vuln`, etc. | JSON serialization for OSV API |
-| `std::error::Error` | `DockerError`, `PipError`, `PypiError` | Custom error types |
-| `std::fmt::Display` | `DockerError`, `PipError`, `PypiError` | Error message formatting |
-| `From<reqwest::Error>` | `PypiError` | Error conversion |
+| `thiserror::Error` | `PyscanError` | Unified error type with `#[from]` conversions for `io::Error`, `reqwest::Error`, `serde_json::Error`, `toml::de::Error` |
 | `Debug, Clone` | Nearly all structs | Development ergonomics |
+| `Hash` | `FileTypes` | Required for `HashMap<FileTypes, u64>` counting in `FoundFileResult` |
 
 ### 3.2 Implicit Interfaces (Function Signatures as Contracts)
 
@@ -191,7 +203,7 @@ pub fn extract_imports_<source>(
 ```rust
 /// The scanner expects a fully populated Vec<Dependency>.
 /// Versions may be None — the scanner will resolve them via VersionStatus::choose().
-pub async fn start(imports: Vec<Dependency>) -> Result<(), std::io::Error>
+pub async fn start(imports: Vec<Dependency>) -> crate::error::Result<()>
 ```
 
 ### 3.3 New Module Template: Adding a New File-Type Parser
@@ -239,52 +251,65 @@ pub enum FileTypes {
 
 | Invariant | Location | Enforcement |
 |---|---|---|
-| **`ARGS` is written exactly once** | `main.rs:113` | `OnceLock` guarantees single initialization. Second write panics. |
-| **`PIPCACHE` is immutable after init** | `utils.rs:265-302` | `Lazy` initializes on first access. No `&mut self` methods are called post-init (only `lookup(&self)`). `_clear_cache(&mut self)` exists but is never invoked. |
-| **File-type priority is deterministic** | `parser/mod.rs:78-105` | `find_import()` enforces strict ordering: `requirements.txt` > `constraints.txt` > `uv.lock` > `pyproject.toml` > `setup.py` > `.py`. Encoded as if/else-if chain, not configurable. |
-| **Every dependency reaching the scanner MUST have a version** | `scanner/api.rs:86-94` | `query_batched()` resolves all `None` versions via `VersionStatus::choose()` before building queries. `to_query()` calls `.unwrap()` on the version — **panics if None**. |
-| **OSV must be reachable before scanning begins** | `scanner/api.rs:29-55` | `Osv::new()` performs a health check GET to `osv.dev`. Failure calls `exit(1)`. |
-| **Ignored vulns are union of file + CLI args** | `scanner/api.rs:147` | Both `.pyscanignore` contents and `--ignorevulns` are checked, bypassed if `--pedantic` is set. |
+| **`ARGS` is written exactly once** | `main.rs` | `OnceLock` inside `LazyLock` guarantees single initialization. Second write panics. |
+| **`PIPCACHE` is immutable after init** | `utils.rs` | `LazyLock` initializes on first access. No `&mut self` methods are called post-init (only `lookup(&self)`). `_clear_cache(&mut self)` exists but is never invoked. Init gracefully falls back to empty cache on `pip list` failure. |
+| **File-type priority is deterministic** | `parser/mod.rs` | `find_import()` enforces strict ordering: `requirements.txt` > `constraints.txt` > `uv.lock` > `pyproject.toml` > `setup.py` > `.py`. Encoded as if/else-if chain using `res.count(&FileTypes::X)`, not configurable. |
+| **Every dependency reaching the scanner MUST have a version** | `scanner/api.rs` | `query_batched()` resolves all `None` versions via `VersionStatus::choose()` before building queries. `to_query()` calls `.unwrap()` on the version — **panics if None**. |
+| **OSV must be reachable before scanning begins** | `scanner/api.rs` | `Osv::new()` performs a health check GET to `osv.dev`. Failure returns `Err(PyscanError::Osv(...))`, propagated to `main()`. |
+| **Ignored vulns are union of file + CLI args** | `scanner/api.rs` | Both `.pyscanignore` contents and `--ignorevulns` are checked, bypassed if `--pedantic` is set. |
+| **Errors propagate — single exit point** | `main.rs` | `run() -> Result<()>` propagates all errors. Only `main()` calls `exit(1)` on `Err`. Vulns found also triggers `exit(1)` from `scanner/mod.rs`. |
 
 ### 4.2 Error Propagation Map
 
 ```mermaid
 graph TD
-    subgraph "Error Types"
-        PE["PipError - String"]
-        PYE["PypiError - String"]
-        DE["DockerError - String"]
-        IOE["std::io::Error"]
-        SE["serde_json::Error"]
-        TE["toml::de::Error"]
+    subgraph "Unified Error Type: PyscanError"
+        PIP["Pip(String)"]
+        PYPI["Pypi(String)"]
+        DOCKER["Docker(String)"]
+        OSV["Osv(String)"]
+        PARSER["Parser(String)"]
+        IO["Io — #from std::io::Error"]
+        NET["Network — #from reqwest::Error"]
+        JSON["Json — #from serde_json::Error"]
+        TOML["Toml — #from toml::de::Error"]
     end
 
-    subgraph "Boundary Handling"
-        EXIT["exit 1 — hard process termination"]
-        EPRINTLN["eprintln — print and continue or exit"]
-        RESULT["Result T E — propagated to caller"]
+    subgraph "Propagation"
+        Q["? operator — propagates to caller"]
+        RUN["run() -> Result in main.rs"]
+        EXIT["exit 1 — single point in main()"]
     end
 
-    PE --> EXIT
-    PYE --> EXIT
-    DE --> RESULT
-    IOE --> RESULT
-    SE --> EXIT
-    TE --> RESULT
+    PIP --> Q
+    PYPI --> Q
+    DOCKER --> Q
+    OSV --> Q
+    PARSER --> Q
+    IO --> Q
+    NET --> Q
+    JSON --> Q
+    TOML --> Q
+    Q --> RUN
+    RUN --> EXIT
 
     style EXIT fill:#ff6b6b,color:#fff
-    style EPRINTLN fill:#ffa94d,color:#fff
-    style RESULT fill:#69db7c,color:#fff
+    style Q fill:#69db7c,color:#fff
+    style RUN fill:#69db7c,color:#fff
 ```
 
-**Pattern**: The codebase overwhelmingly uses **`exit(1)` as the error handler**. There is no unified `Error` enum. Each module defines its own newtype error (`PipError`, `PypiError`, `DockerError`) that wraps a `String`. Errors are:
+**Pattern**: The codebase uses a **unified `PyscanError` enum** (defined in `src/error.rs`) with `thiserror::Error` derive. All error types flow through a single type:
 
-1. **Printed** via `eprintln!()`
-2. **Terminated** via `std::process::exit(1)`
-3. **Rarely propagated** — `Result` returns exist but callers typically `.unwrap()` or match-and-exit.
+1. **Propagated** via `?` operator throughout the call stack
+2. **Printed** via a single `eprintln!("{e}")` in `main()`
+3. **Terminated** via a single `std::process::exit(1)` in `main()`
 
-> [!IMPORTANT]
-> **Architecture Debt**: The aggressive use of `exit(1)` makes the code untestable and prevents graceful error recovery. A unified `PyscanError` enum with `thiserror` would be the natural refactor.
+The `#[from]` attribute on `Io`, `Network`, `Json`, and `Toml` variants generates `From` impls, enabling automatic conversion with `?`. Domain-specific variants (`Pip`, `Pypi`, `Docker`, `Osv`, `Parser`) wrap `String` messages created via `.map_err()`.
+
+```rust
+// src/error.rs
+pub type Result<T> = std::result::Result<T, PyscanError>;
+```
 
 ### 4.3 Safety: `unsafe` Audit
 
@@ -304,28 +329,24 @@ No raw pointer manipulation, no `transmute`, no manual memory management exists 
 
 **Goal**: Support parsing `Pipfile`, `conda.yaml`, `setup.cfg`, etc.
 
-1. **Add a `FileTypes` variant** in `src/parser/structs.rs` (line 13-19):
+1. **Add a `FileTypes` variant** in `src/parser/structs.rs`:
    ```rust
    pub enum FileTypes {
        // ...existing...
-       Pipfile,
+       Pipfile,  // ← add this (Hash is already derived)
    }
    ```
 
-2. **Add an `is_*()` helper** on `FoundFile` (same file, around line 28-41).
-
-3. **Add counter field + incrementor** on `FoundFileResult` (same file, around line 43-83).
-
-4. **Write the extractor** in `src/parser/extractor.rs`:
+2. **Write the extractor** in `src/parser/extractor.rs`:
    ```rust
    pub fn extract_imports_pipfile(content: String, imp: &mut Vec<Dependency>) { ... }
    ```
 
-5. **Wire it into `scan_dir()`** in `src/parser/mod.rs` (line 11-75) — add filename match.
+3. **Wire it into `scan_dir()`** in `src/parser/mod.rs` — add filename match and `result.add(FoundFile { ..., filetype: FileTypes::Pipfile, ... })`. No counter fields or incrementor methods needed — `FoundFileResult::add()` handles counting automatically via `HashMap<FileTypes, u64>`.
 
-6. **Wire it into `find_import()`** in `src/parser/mod.rs` (line 78-101) — add priority level.
+4. **Wire it into `find_import()`** in `src/parser/mod.rs` — add `res.count(&FileTypes::Pipfile) > 0` check at desired priority level in the if/else-if chain.
 
-7. **Create `async fn find_pipfile_imports()`** following the existing `find_reqs_imports()` pattern.
+5. **Create `async fn find_pipfile_imports(f: &[FoundFile])`** following the existing pattern. Return `crate::error::Result<()>`.
 
 ### 5.2 Add a New Vulnerability Database
 
@@ -337,29 +358,29 @@ No raw pointer manipulation, no `transmute`, no manual memory management exists 
 
 3. **Add serde models** in `src/scanner/models.rs` for the new API's response format.
 
-4. **Modify `scanner::start()`** in `src/scanner/mod.rs` (line 8-28) to instantiate both and merge results.
+4. **Modify `scanner::start()`** in `src/scanner/mod.rs` to instantiate both and merge results. Return `crate::error::Result<()>`.
 
-5. **Respect the `--skip` CLI argument** (currently hidden) in `src/main.rs` (line 41-48) to allow users to skip databases.
+5. **Respect the `--skip` CLI argument** (currently hidden) in `src/main.rs` to allow users to skip databases.
 
 ### 5.3 Extend the CLI
 
 **Goal**: Add a new subcommand or flag.
 
-1. **For a flag**: Add a field to the `Cli` struct in `src/main.rs` (line 25-86) with `#[arg(...)]`.
+1. **For a flag**: Add a field to the `Cli` struct in `src/main.rs` with `#[arg(...)]`.
 
-2. **For a subcommand**: Add a variant to `SubCommand` enum in `src/main.rs` (line 88-111).
+2. **For a subcommand**: Add a variant to `SubCommand` enum in `src/main.rs`.
 
-3. **Access it anywhere** via `ARGS.get().unwrap().your_field` (the global static pattern).
+3. **Access it anywhere** via `ARGS.get().unwrap().your_field` (the global `LazyLock` pattern).
 
-4. **Handle it** in the `match &ARGS.get().unwrap().subcommand` block in `main()`.
+4. **Handle it** in the `match &ARGS.get().unwrap().subcommand` block in `run()`.
 
 ### 5.4 Add a New Output Format
 
 **Goal**: Export results as SARIF, CSV, HTML, etc.
 
-1. **Check the `--output` flag** logic in `src/scanner/api.rs` (line 122-137).
+1. **Check the `--output` flag** logic in `src/scanner/api.rs`.
 
-2. **Currently only `.json` is supported** — the check is a raw string suffix match on the filename.
+2. **Currently only `.json` is supported** — the check uses `filename.ends_with(".json")`.
 
 3. **Add new format branches** after the JSON branch:
    ```rust
@@ -376,7 +397,9 @@ No raw pointer manipulation, no `transmute`, no manual memory management exists 
 
 1. All Docker logic is isolated in `src/docker/mod.rs`.
 2. It creates a temp container, copies files out, calls `parser::scan_dir()` on the extracted path, then cleans up.
-3. **Known issues**: Blocking `Command` calls, hardcoded `./tmp/docker-files` path, no `spawn_blocking`.
+3. Uses `tokio::process::Command` for async subprocess execution.
+4. Returns `crate::error::Result<()>` with `PyscanError::Docker` for failures.
+5. **Remaining issue**: Hardcoded `./tmp/docker-files` path.
 
 ---
 
@@ -384,16 +407,16 @@ No raw pointer manipulation, no `transmute`, no manual memory management exists 
 
 Before submitting any change to this codebase, verify:
 
-- [ ] **Global statics**: Did you add a new global? Use `Lazy<OnceLock<T>>` or `Lazy<T>`. Never `static mut`.
-- [ ] **Error handling**: Don't add new `exit(1)` calls. Propagate `Result` upward. (Even though the codebase does this, it's tech debt.)
-- [ ] **Async discipline**: If calling `std::process::Command`, wrap it in `tokio::task::spawn_blocking()`.
+- [ ] **Global statics**: Did you add a new global? Use `LazyLock<OnceLock<T>>` or `LazyLock<T>` from `std::sync`. Never `static mut`.
+- [ ] **Error handling**: Don't add new `exit(1)` calls. Return `Err(PyscanError::...)` and use `?` to propagate. All functions should return `crate::error::Result<T>`.
+- [ ] **Async discipline**: If calling `std::process::Command` in an async context, use `tokio::process::Command` or wrap with `tokio::task::spawn_blocking()`. Pip calls remain sync (called from `LazyLock` init).
 - [ ] **Dependency struct**: All new parsers must produce `Dependency` with `VersionStatus { source: true }` when the version comes from the file.
-- [ ] **File priority**: If adding a new file type, decide where it sits in the `find_import()` priority chain. Current order: `requirements.txt` > `constraints.txt` > `uv.lock` > `pyproject.toml` > `setup.py` > `.py`.
+- [ ] **File priority**: If adding a new file type, decide where it sits in the `find_import()` priority chain. Current order: `requirements.txt` > `constraints.txt` > `uv.lock` > `pyproject.toml` > `setup.py` > `.py`. Use `res.count(&FileTypes::NewType) > 0` in the if/else-if chain.
+- [ ] **FoundFileResult**: Adding a new file type only requires adding a `FileTypes` enum variant (with `Hash` derive already present). No new counter fields or methods needed — `add()` and `count()` handle everything.
 - [ ] **Version resolution**: If `version` is `None`, the scanner will call `VersionStatus::choose()`. Ensure your extractor sets it to `None` only when the source genuinely lacks version info.
 - [ ] **Serde models**: When adding models for a new API, use `#[serde(rename = "...")]` to match the API's JSON keys exactly. Add `Option<T>` for fields that may be absent.
-- [ ] **Testing**: The codebase has no tests currently. If you add one, place it in the same module with `#[cfg(test)]`.
-- [ ] **`todo!()` audit**: There are multiple `todo!()` macros in `extractor.rs` (lines 291-296, 370-384). These will **panic at runtime** if hit. Replace with `eprintln!` + `continue` or proper handling.
-- [ ] **Exit code contract**: `exit(0)` = no vulns found, `exit(1)` = vulns found or error. Don't break this CI/CD contract.
+- [ ] **Testing**: The codebase has no tests currently. If you add one, place it in the same module with `#[cfg(test)]`. The `Result`-based error handling now makes functions testable (no `exit(1)` to worry about).
+- [ ] **Exit code contract**: `exit(0)` = no vulns found, `exit(1)` = vulns found or error. The single exit point is in `main()`. Don't add `exit()` calls elsewhere.
 
 ---
 
@@ -401,13 +424,14 @@ Before submitting any change to this codebase, verify:
 
 | File | Lines | Purpose |
 |---|---|---|
-| `src/main.rs` | 211 | CLI definition, global statics, entry-point dispatch |
-| `src/utils.rs` | 330 | HTTP helpers, pip/pypi version retrieval, PipCache, SysInfo |
-| `src/parser/mod.rs` | 193 | Directory scanning, file-type routing, import dispatch |
-| `src/parser/extractor.rs` | 570 | Extraction logic for requirements.txt, pyproject.toml, setup.py, uv.lock, .py |
-| `src/parser/structs.rs` | 186 | `Dependency`, `FoundFile`, `FoundFileResult`, `VersionStatus`, `ScannedDependency` |
-| `src/scanner/mod.rs` | 31 | Scanner orchestration, `start()` entry point |
-| `src/scanner/api.rs` | 256 | `Osv` struct, single/batch query, vuln_id detail fetch |
+| `src/main.rs` | ~165 | CLI definition, global statics (`LazyLock`), `run() -> Result<()>` entry |
+| `src/error.rs` | ~47 | Unified `PyscanError` enum with `thiserror`, `Result<T>` type alias |
+| `src/utils.rs` | ~230 | HTTP helpers, pip/pypi version retrieval, PipCache, SysInfo |
+| `src/parser/mod.rs` | ~175 | Directory scanning, file-type routing, import dispatch (returns `Result`) |
+| `src/parser/extractor.rs` | ~460 | Extraction logic for requirements.txt, pyproject.toml, setup.py, uv.lock, .py |
+| `src/parser/structs.rs` | ~135 | `Dependency`, `FoundFile`, `FoundFileResult` (HashMap-based), `VersionStatus`, `ScannedDependency` |
+| `src/scanner/mod.rs` | ~25 | Scanner orchestration, `start()` entry point (returns `Result`) |
+| `src/scanner/api.rs` | ~185 | `Osv` struct, single/batch query, parallel `vuln_id` detail fetch |
 | `src/scanner/models.rs` | 431 | Serde models for OSV API + PyPI API responses |
-| `src/display/mod.rs` | 171 | `Progress` counter, `display_queried()`, `display_summary()` |
-| `src/docker/mod.rs` | 136 | Docker container creation, file extraction, cleanup |
+| `src/display/mod.rs` | ~150 | `Progress` counter, `display_queried()`, `display_summary()` (`LazyLock`) |
+| `src/docker/mod.rs` | ~85 | Docker container creation, async subprocess, file extraction, cleanup |

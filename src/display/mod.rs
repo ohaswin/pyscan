@@ -1,12 +1,11 @@
 use crate::parser::structs::ScannedDependency;
 use console::{style, Term};
-use once_cell::sync::Lazy;
-use std::{collections::HashMap, io, process::exit};
+use std::sync::LazyLock;
+use std::collections::HashMap;
 
-static CONS: Lazy<Term> = Lazy::new(Term::stdout);
+static CONS: LazyLock<Term> = LazyLock::new(Term::stdout);
 
 pub struct Progress {
-    // this progress info only contains progress info about the found vulns.
     pub count: usize,
     current_displayed: usize,
 }
@@ -44,7 +43,7 @@ impl Progress {
 }
 
 pub fn display_queried(
-    collected: &Vec<ScannedDependency>,
+    collected: &[ScannedDependency],
     imports_info: &mut HashMap<String, String>,
 ) {
     // --- displaying query result starts here ---
@@ -58,9 +57,9 @@ pub fn display_queried(
             )
             .as_str(),
         );
-    } // displays all the deps where vuln has been found
+    }
 
-    // remove the the deps with vulns from import_info so what remains is the safe deps, which we can display as safe
+    // remove the deps with vulns from import_info so what remains is the safe deps
     for d in collected.iter() {
         imports_info.remove(d.name.as_str());
     }
@@ -78,40 +77,34 @@ pub fn display_queried(
             )
             .as_str(),
         );
-    } // display the safe deps
-    let _ = display_summary(&collected);
+    }
+    let _ = display_summary(collected);
 }
 
-pub fn display_summary(collected: &Vec<ScannedDependency>) -> io::Result<()> {
-    // thing is, collected only has vulnerable dependencies, if theres a case where no vulns have been found, it will just skip this entire thing.
+pub fn display_summary(collected: &[ScannedDependency]) -> std::io::Result<()> {
     if !collected.is_empty() {
-        // --- summary starts here ---
         CONS.write_line(&format!(
             "{}",
             style("SUMMARY").bold().yellow().underlined()
         ))?;
         for v in collected {
             for vuln in &v.vuln.vulns {
-                // DEPENDENCY
                 let name = format!(
                     "Dependency: {}",
                     style(v.name.clone()).bold().bright().red()
                 );
-                
+
                 CONS.write_line(name.as_str())?;
                 CONS.flush()?;
 
-                // ID
                 let id = format!("ID: {}", style(vuln.id.as_str()).bold().bright().yellow());
                 CONS.write_line(id.as_str())?;
                 CONS.flush()?;
 
-                // DETAILS
                 let details = format!("Details: {}", style(vuln.details.as_str()).italic());
                 CONS.write_line(details.as_str())?;
                 CONS.flush()?;
 
-                // VERSIONS AFFECTED from ... to
                 let vers: Vec<Vec<String>> = vuln
                     .affected
                     .iter()
@@ -134,7 +127,6 @@ pub fn display_summary(collected: &Vec<ScannedDependency>) -> io::Result<()> {
                         ]
                     })
                     .collect();
-                // let vers: Vec<Vec<String>> = vuln.affected.iter().map(|affected| {vec![affected.versions.first().unwrap().to_string(), affected.versions.last().unwrap().to_string()]}).collect();
 
                 let version = format!(
                     "Versions affected: {} to {}",
@@ -164,7 +156,6 @@ pub fn display_summary(collected: &Vec<ScannedDependency>) -> io::Result<()> {
         }
     } else {
         println!("Finished scanning all found dependencies.");
-        exit(0)
     }
     Ok(())
 }
