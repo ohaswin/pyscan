@@ -16,6 +16,7 @@ pub enum FileTypes {
     Pyproject,
     Constraints,
     SetupPy,
+    UvLock,
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +39,9 @@ impl FoundFile {
     pub fn is_setuppy(&self) -> bool {
         self.filetype == FileTypes::SetupPy
     }
+    pub fn is_uvlock(&self) -> bool {
+        self.filetype == FileTypes::UvLock
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -48,7 +52,8 @@ pub struct FoundFileResult {
     pub reqs_found: u64,
     pub pyproject_found: u64,
     pub constraints_found: u64,
-    pub setuppy_found: u64
+    pub setuppy_found: u64,
+    pub uvlock_found: u64,
 }
 
 impl FoundFileResult {
@@ -60,6 +65,7 @@ impl FoundFileResult {
             pyproject_found: 0,
             constraints_found: 0,
             setuppy_found: 0,
+            uvlock_found: 0,
         }
     }
     pub fn add(&mut self, f: FoundFile) {
@@ -79,6 +85,9 @@ impl FoundFileResult {
     }
     pub fn setuppy(&mut self) {
         self.setuppy_found += 1
+    }
+    pub fn uvlock(&mut self) {
+        self.uvlock_found += 1
     }
 }
 

@@ -65,6 +65,15 @@ pub async fn scan_dir(dir: &Path) {
                 });
                 result.pyproject();
             }
+            // uv.lock
+            else if *"uv.lock" == filename.clone() {
+                result.add(FoundFile {
+                    name: filename,
+                    filetype: FileTypes::UvLock,
+                    path: OsString::from(entry.path()),
+                });
+                result.uvlock();
+            }
         }
     }
     // println!("{:?}", result.clone());
@@ -86,6 +95,9 @@ async fn find_import(res: FoundFileResult) {
     } else if res.constraints_found != 0 {
         // since constraints and requirements have the same syntax, its okay to use the same parser.
         find_reqs_imports(&files).await
+    } else if res.uvlock_found != 0 {
+        // uv.lock has resolved versions — prefer over pyproject.toml
+        find_uvlock_imports(&files).await
     } else if res.pyproject_found != 0 {
         // use pyproject instead (if it exists)
         find_pyproject_imports(&files).await
@@ -96,7 +108,7 @@ async fn find_import(res: FoundFileResult) {
         find_python_imports(&files).await
     } else {
         eprintln!(
-            "Could not find any requirements.txt, pyproject.toml or python files in this directory"
+            "Could not find any requirements.txt, uv.lock, pyproject.toml or python files in this directory"
         ); exit(1)
     }
 }
@@ -187,6 +199,26 @@ async fn find_pyproject_imports(f: &Vec<FoundFile>) {
     }
     // println!("{:?}", imports.clone());
     // cons.clear_last_lines(1).unwrap();
+    // --- pass the dependencies to the scanner/api ---
+    scanner::start(imports).await.unwrap();
+}
+
+async fn find_uvlock_imports(f: &Vec<FoundFile>) {
+    let cons = console::Term::stdout();
+    cons.write_line("Using uv.lock as source...")
+        .unwrap();
+
+    let mut imports = Vec::new();
+    for file in f {
+        if file.is_uvlock() {
+            let readf = fs::read_to_string(file.path.clone());
+            if let Ok(content) = readf {
+                let _ = extractor::extract_imports_uvlock(content, &mut imports);
+            } else {
+                eprintln!("There was a problem reading your uv.lock")
+            }
+        }
+    }
     // --- pass the dependencies to the scanner/api ---
     scanner::start(imports).await.unwrap();
 }
