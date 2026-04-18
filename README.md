@@ -72,6 +72,7 @@ Pyscan is a highly optimized tool, but it hasn't been battle-hardened across eve
 
 ## Roadmap (As of April 2026)
 
+- [ ] Add cyclonedx SBOM support.
 - [ ] Persistent state representation of a project's security posture.
 - [ ] Graphical DAG analysis of transitive dependencies.
 - [ ] Advanced filtering, searching, and terminal UI improvements for vulnerability display.
