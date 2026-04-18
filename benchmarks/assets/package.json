@@ -1,0 +1,17 @@
+{
+  "name": "d3_gen",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "d3": "^7.9.0",
+    "jsdom": "^29.0.2"
+  }
+}

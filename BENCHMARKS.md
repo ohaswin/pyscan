@@ -6,7 +6,7 @@
 
 ![Execution Time Chart](./benchmarks/assets/execution_time.svg)
 
-*Note: Pyscan achieves a massive **5.25x speedup** on medium datasets and a **2.33x speedup** on large datasets.*
+*Note: Pyscan achieves a massive **5.25x speedup** against pip-audit and a **2.30x speedup** against safety on medium datasets.*
 
 ### Memory Footprint
 

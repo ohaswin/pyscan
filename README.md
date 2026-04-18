@@ -20,7 +20,7 @@
 ---
 
 Pyscan was engineered to solve the performance and memory bottlenecks of traditional Python-based security tools:
-- **Massive Performance Gains:** Achieves up to a **5.25x speedup** against industry-standard tools like `pip-audit` on medium to large datasets. Pyscan's runtime operates on an $O(\text{vulns})$ time complexity model, execution time scales with the number of vulnerabilities found, **not** the number of dependencies you have.
+- **Performance Gains:** Achieves up to a **5.25x speedup** against industry-standard tools like `pip-audit` and `safety` on medium to large datasets. Pyscan's runtime operates on an $O(\text{vulns})$ time complexity model, execution time scales with the number of vulnerabilities found, **not** the number of dependencies you have.
 - **Flat Memory Footprint:** Pyscan's memory usage stays completely flat (~45MB) whether you're scanning 15 dependencies or 700+ dependencies. Pretty solid for memory-constrained CI/CD pipelines.
 - **Universal Support:** Automatically resolves and extracts dependencies from `uv.lock`, `requirements.txt`, `pyproject.toml` (Poetry, Hatch, PDM, Flit), or dynamically by parsing your raw `.py` source code.
 

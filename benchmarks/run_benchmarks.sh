@@ -75,7 +75,7 @@ make_pyscan_dir() {
 # ── Preflight Checks ────────────────────────────────────────────────────────
 header "🔍 Preflight Checks"
 
-REQUIRED_TOOLS=(hyperfine pyscan pip-audit jq curl)
+REQUIRED_TOOLS=(hyperfine pyscan pip-audit safety jq curl)
 for tool in "${REQUIRED_TOOLS[@]}"; do
   if ! command -v "$tool" &>/dev/null; then
     fail "'$tool' is not installed or not in PATH."
@@ -122,6 +122,7 @@ ARCH=$(uname -m)
 PYSCAN_VERSION=$(pyscan --version 2>&1 | head -1)
 PIP_AUDIT_VERSION=$(pip-audit --version 2>&1 | head -1)
 HYPERFINE_VERSION=$(hyperfine --version 2>&1 | head -1)
+SAFETY_VERSION=$(safety --version 2>/dev/null | head -1)
 
 MACHINE_JSON=$(jq -n \
   --arg cpu_model   "$CPU_MODEL" \
@@ -134,6 +135,7 @@ MACHINE_JSON=$(jq -n \
   --arg arch        "$ARCH" \
   --arg pyscan_v    "$PYSCAN_VERSION" \
   --arg pipaudit_v  "$PIP_AUDIT_VERSION" \
+  --arg safety_v    "$SAFETY_VERSION" \
   --arg hyperfine_v "$HYPERFINE_VERSION" \
   '{
     cpu_model:           $cpu_model,
@@ -147,6 +149,7 @@ MACHINE_JSON=$(jq -n \
     tool_versions: {
       pyscan:     $pyscan_v,
       pip_audit:  $pipaudit_v,
+      safety:     $safety_v,
       hyperfine:  $hyperfine_v
     }
   }')
@@ -228,6 +231,8 @@ for entry in "${DATASETS[@]}"; do
     "pyscan -d '$pyscan_dir'" \
     --command-name "pip-audit ($label)" \
     "pip-audit -r '$path' --progress-spinner off" \
+    --command-name "safety ($label)" \
+    "safety check -r '$path'" \
     2>&1 | tee "$OUTPUT_DIR/hyperfine_${label}.log"
 
   # Extract hyperfine results and add dep_count metadata
@@ -274,20 +279,29 @@ if [[ "$HAS_GNU_TIME" == "true" ]]; then
       >"$OUTPUT_DIR/mem_pipaudit_${label}_stdout.txt" 2>"$pipaudit_mem_out" || true
     PIPAUDIT_RSS=$(grep 'Maximum resident set size' "$pipaudit_mem_out" | awk '{print $NF}')
 
+    info "Memory profile: safety ($label)..."
+    safety_mem_out="$OUTPUT_DIR/mem_safety_${label}.txt"
+    /usr/bin/time -v safety check -r "$path" \
+      >"$OUTPUT_DIR/mem_safety_${label}_stdout.txt" 2>"$safety_mem_out" || true
+    SAFETY_RSS=$(grep 'Maximum resident set size' "$safety_mem_out" | awk '{print $NF}')
+
     MEM_ENTRY=$(jq -n \
       --arg label      "$label" \
       --arg pyscan_kb  "${PYSCAN_RSS:-0}" \
       --arg pipaudit_kb "${PIPAUDIT_RSS:-0}" \
+      --arg safety_kb  "${SAFETY_RSS:-0}" \
       '{
         dataset: $label,
         pyscan_peak_rss_kb:    ($pyscan_kb | tonumber),
         pip_audit_peak_rss_kb: ($pipaudit_kb | tonumber),
+        safety_peak_rss_kb:    ($safety_kb | tonumber),
         pyscan_peak_rss_mb:    (($pyscan_kb | tonumber) / 1024 | round),
-        pip_audit_peak_rss_mb: (($pipaudit_kb | tonumber) / 1024 | round)
+        pip_audit_peak_rss_mb: (($pipaudit_kb | tonumber) / 1024 | round),
+        safety_peak_rss_mb:    (($safety_kb | tonumber) / 1024 | round)
       }')
 
     MEMORY_JSON=$(echo "$MEMORY_JSON" | jq --argjson e "$MEM_ENTRY" '. + [$e]')
-    ok "Memory ($label): pyscan=${PYSCAN_RSS:-?}KB, pip-audit=${PIPAUDIT_RSS:-?}KB"
+    ok "Memory ($label): pyscan=${PYSCAN_RSS:-?}KB, pip-audit=${PIPAUDIT_RSS:-?}KB, safety=${SAFETY_RSS:-?}KB"
   done
 else
   warn "Skipping memory profiling (/usr/bin/time not available)"
@@ -303,10 +317,17 @@ SUMMARY_JSON=$(echo "$BENCHMARKS_JSON" | jq '
     dependency_count: .dependency_count,
     pyscan_mean_s:    (.results[] | select(.command | test("pyscan")) | .mean_s),
     pip_audit_mean_s: (.results[] | select(.command | test("pip-audit")) | .mean_s),
+    safety_mean_s:    (.results[] | select(.command | test("safety")) | .mean_s),
     pyscan_stddev_s:  (.results[] | select(.command | test("pyscan")) | .stddev_s),
     pip_audit_stddev_s: (.results[] | select(.command | test("pip-audit")) | .stddev_s),
+    safety_stddev_s:  (.results[] | select(.command | test("safety")) | .stddev_s),
     speedup_factor:   (
       (.results[] | select(.command | test("pip-audit")) | .mean_s) /
+      (.results[] | select(.command | test("pyscan")) | .mean_s)
+      | . * 100 | round / 100
+    ),
+    speedup_vs_safety: (
+      (.results[] | select(.command | test("safety")) | .mean_s) /
       (.results[] | select(.command | test("pyscan")) | .mean_s)
       | . * 100 | round / 100
     ),
@@ -366,6 +387,6 @@ echo ""
 # Print a quick summary table
 echo -e "${BOLD}  Quick Summary:${NC}"
 echo "$SUMMARY_JSON" | jq -r '
-  .[] | "  \(.dataset | ascii_upcase)  │  pyscan: \(.pyscan_mean_s | . * 1000 | round / 1000)s  │  pip-audit: \(.pip_audit_mean_s | . * 1000 | round / 1000)s  │  \(.speedup_factor)x faster  │  stability: \(.stability)"
+  .[] | "  \(.dataset | ascii_upcase)  │  pyscan: \(.pyscan_mean_s | . * 1000 | round / 1000)s  │  pip-audit: \(.pip_audit_mean_s | . * 1000 | round / 1000)s  │  safety: \(.safety_mean_s | . * 1000 | round / 1000)s  │  \(.speedup_factor)x vs pip-audit  │  \(.speedup_vs_safety)x vs safety  │  stability: \(.stability)"
 '
 echo ""
