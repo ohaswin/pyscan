@@ -13,8 +13,6 @@
   <img src="./benchmarks/assets/readme_benchmark.svg" alt="Pyscan Performance Comparison">
 </p>
 
-<h3 align="center">Blazing-fast, memory-safe dependency vulnerability scanning.</h3>
-
 <p align="center">
   Pyscan is a highly concurrent vulnerability scanner written in Rust. It automatically traverses your Python project, extracts dependencies across various packaging formats, and cross-references them against the <a href="https://osv.dev/">Open Source Vulnerabilities (OSV)</a> database in a single asynchronous batch request.
 </p>
