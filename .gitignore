@@ -76,3 +76,6 @@ requirements.txt
 ptest
 
 tests
+
+# Benchmark results (generated)
+benchmarks/results/

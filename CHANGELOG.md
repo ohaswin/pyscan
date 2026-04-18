@@ -109,3 +109,28 @@ Consider **donating** if you *actually* use this tool, as I'm thinking about arc
 - Add feature: Ignore specific vulnerability IDs using a .pyscanignore file either at cwd or config folder of the OS (global)
 - Improve CI to include much more platforms, except for 2 obscure ones due to assembly issues (s390x, ppc64le) hopefully all 0 of their users are not annoyed at me.
 - Nothing much, honestly, look at the last changelog date. College has been crazy, I've been doing internships and side gigs and working meself to the bone. Still broke, but at least I know how shitty this codebase is now, and I'm grateful that i hold the awareness to realize that after 3 years lol.
+
+## v2.0.0 (April 13, 2026) - The Modernization Overhaul
+
+This release marks a significant milestone in `pyscan`'s evolution, featuring a complete architectural refactor, improved performance via asynchronous processing, and a beautiful new terminal UI.
+
+### New Features
+
+- **Terminal Display Engine**: Rebuilt the CLI output from the ground up.
+  - Vulnerabilities are now classified by **Severity** (High, Medium, Low).
+  - TTY-aware output with rich components (cards, progress bars, tables).
+- **`uv.lock` Support**: Added a new parser/extractor for `uv.lock` files, bringing first-class support for the `uv` package manager.
+- **Architectural Manifest**: Introduced `ARCH_MANIFEST.md`, comprehensive technical blueprint detailing the system's execution lifecycle and trait interfaces for future development. This is also a knowledge base for LLMs.
+
+### Refactors & Performance
+
+- **Asynchronous Execution**: Migrated core execution paths to `tokio` for non-blocking I/O and async subprocess management.
+- **Parallel Vulnerability Fetching**: Significantly improved performance when querying the OSV API for large dependency trees through parallel execution.
+- **Centralized Error Handling**: Replaced panics with a robust, type-safe error management system using `thiserror`.
+- **Idiomatic Rust**: Extensive cleanup of legacy "Junior Rust" patterns, enhancing both memory efficiency and maintainability.
+
+### Miscellaneous
+
+- Updated branding and README documentation.
+- CI/CD improvements for enhanced cross-platform stability.
+- Fixed issue #24 related to repository assets.

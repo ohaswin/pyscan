@@ -1,94 +1,85 @@
-<h1 align="center"> 🐍 Pyscan </h1>
+<h1 align="center">Pyscan</h1>
 
-![CI](https://github.com/ohaswin/pyscan/actions/workflows/CI.yml/badge.svg) ![Liscense](https://img.shields.io/github/license/ohaswin/pyscan?color=ff64b4) [![PyPI](https://img.shields.io/pypi/v/pyscan-rs?color=ff69b4)](https://pypi.org/project/pyscan-rs) [![](https://img.shields.io/crates/v/pyscan?color=ff64b4)](https://crates.io/crates/pyscan) [![GitHub issues](https://img.shields.io/github/issues/ohaswin/pyscan.svg?color=ff69b4)](https://GitHub.com/ohaswin/pyscan/issues/) [![Top Language](https://img.shields.io/github/languages/top/ohaswin/pyscan?color=ff69b4)](https://img.shields.io/github/languages/top/ohaswin/pyscan) ![Crates.io Total Downloads](https://img.shields.io/crates/d/pyscan?label=crates.io%20downloads) [![PyPI Downloads](https://static.pepy.tech/personalized-badge/pyscan-rs?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=BLUE&left_text=PyPI+downloads)](https://pepy.tech/projects/pyscan-rs)
+<p align="center">
+  <img src="https://github.com/ohaswin/pyscan/actions/workflows/CI.yml/badge.svg" alt="CI">
+  <img src="https://img.shields.io/github/license/ohaswin/pyscan?color=ff64b4" alt="License">
+  <a href="https://pypi.org/project/pyscan-rs"><img src="https://img.shields.io/pypi/v/pyscan-rs?color=ff69b4" alt="PyPI"></a>
+  <a href="https://crates.io/crates/pyscan"><img src="https://img.shields.io/crates/v/pyscan?color=ff64b4" alt="Crates.io"></a>
+  <img src="https://img.shields.io/crates/d/pyscan?color=ff64b4&label=crates.io%20downloads" alt="Crates.io Downloads">
+  <a href="https://pepy.tech/projects/pyscan-rs"><img src="https://static.pepy.tech/personalized-badge/pyscan-rs?period=total&units=INTERNATIONAL_SYSTEM&left_color=black&right_color=blue&left_text=PyPI+downloads" alt="PyPI Downloads"></a>
+</p>
 
+<p align="center">
+  <img src="./benchmarks/assets/readme_benchmark.svg" alt="Pyscan Performance Comparison">
+</p>
 
-<h4 align="center"> 
+<h3 align="center">Blazing-fast, memory-safe dependency vulnerability scanning.</h3>
 
-<!-- <img src="https://media.discordapp.net/attachments/1002212458502557718/1107648562004758538/pyscan.png?width=779&height=206"> -->
+<p align="center">
+  Pyscan is a highly concurrent vulnerability scanner written in Rust. It automatically traverses your Python project, extracts dependencies across various packaging formats, and cross-references them against the <a href="https://osv.dev/">Open Source Vulnerabilities (OSV)</a> database in a single asynchronous batch request.
+</p>
 
-<img src="./assets/pyscan.png">
+---
 
-</h4>
+Pyscan was engineered to solve the performance and memory bottlenecks of traditional Python-based security tools:
+- **Massive Performance Gains:** Achieves up to a **5.25x speedup** against industry-standard tools like `pip-audit` on medium to large datasets. Pyscan's runtime operates on an $O(\text{vulns})$ time complexity model, execution time scales with the number of vulnerabilities found, **not** the number of dependencies you have.
+- **Flat Memory Footprint:** Pyscan's memory usage stays completely flat (~45MB) whether you're scanning 15 dependencies or 700+ dependencies. Pretty solid for memory-constrained CI/CD pipelines.
+- **Universal Support:** Automatically resolves and extracts dependencies from `uv.lock`, `requirements.txt`, `pyproject.toml` (Poetry, Hatch, PDM, Flit), or dynamically by parsing your raw `.py` source code.
 
-<h5 align="center"> <i>A simple tool for gathering and reporting vulnerabilities in your projects.</i> </h5>
+Read the deep-dive in [Benchmarks Report](BENCHMARKS.md).
 
-+ can be used within large projects. (see [benchmarks](BENCHMARKS.md))
-+ automatically finds dependencies either from configuration files or within source code.
-+ support for poetry,hatch,filt,pdm and can be integrated into existing build processes.
-+ relies on vulnerabilities from the Open Source Vulnerabilities ([osv.dev](https://osv.dev/)) database for its reporting
-+ hasn't been battle-hardened yet. PRs and issue makers welcome.
+## Installation
 
-## 🕊️ Install
+You can install Pyscan via `pipx`, `pip` (compiled Python wheel) or `cargo` (native Rust binary):
 
 ```bash
+# via pipx (recommended) (Note the "-rs" suffix)
+pipx install pyscan-rs
+
+# via pip (Note the "-rs" suffix) 
 pip install pyscan-rs
-```
-**look out for the "-rs"** part
-or
 
-```bash
+# via Cargo
 cargo install pyscan
 ```
 
+## Usage
 
-
-## 🐇 Usage
-
-Go to your python source directory (or wherever you keep your `requirements.txt`/`pyproject.toml`) and run:
+Simply run `pyscan` in your project's root directory, or point it to a specific source folder:
 
 ```bash
-> pyscan
-```
-or
-```bash
-> pyscan -d path/to/src
-```
+# Scan the current directory
+pyscan
 
-<!-- ## Docker
-
-[WARNING: docker subcommand currently does not work, if you are installing pyscan solely for that purpose. It will be fixed and released in the next version. Thanks for the patience, people with actual jobs (i dont know anyone else who actually uses docker)]
-
-Pyscan can scan inside docker images given you provide the correct path inside. This is still in its early stage and may break easily.
-
-```bash
-> pyscan docker -n my-docker-image -p /path/inside/container/to/source
+# Scan a specific directory
+pyscan -d path/to/src
 ```
 
-by <i>"source"</i> I mean `requirements.txt`, `pyproject.toml` or your python files.
-Note: Your docker engine/daemon should be running as pyscan utilizes the `docker create` command.  -->
+### Dependency Resolution Precedence
+If multiple source files are present, Pyscan extracts dependencies following this priority chain:
+1. `uv.lock`
+2. `requirements.txt`
+3. `pyproject.toml`
+4. Raw Source Code (`.py`)
 
-<br>
-Pyscan will find any dependencies added through poetry, hatch, filt, pdm, etc.
-Here's the order of precedence for a source/config file:
+*Pyscan will fall back to querying PyPI for the latest version if a dependency is found without a strictly pinned version, though adhering to PEP-508 syntax is highly recommended.*
 
-+ `requirements.txt`
-+ `pyproject.toml`
-+ your source code (`.py`)
+## Building & Architecture
 
-Pyscan will use your `pip` to find unknown versions, otherwise [pypi.org](https://pypi.org) for the latest version. Still, **it is recommended to version-ize your requirements** and use proper [pep-508 syntax](https://peps.python.org/pep-0508/).
+Pyscan requires a Rust toolchain `>= v1.70` and leverages asynchronous networking via `reqwest` and `tokio` to parallelize OSV queries and maximize throughput. If you're interested in how the parser and scanner are structured, check out the[Architecture Overview](./architecture/).
 
-## Building
+## Disclaimer
 
-pyscan requires a rust version of `< v1.70`, and might be unstable on previous releases.
-There's an overview of the codebase at [architecture](./architecture/). Grateful for all the contributions so far.
+Pyscan is a highly optimized tool, but it hasn't been battle-hardened across every edge case yet. It does not guarantee your code is 100% safe from all vectors. I highly recommend using a layered security approach alongside tools like Dependabot, `pip-audit`, or Trivy. PRs and issues are warmly welcomed!
 
-## 🦀 Note
+## Roadmap (As of April 2026)
 
-pyscan doesn't make sure your code is safe from everything. Use all resources available to you like [safety](https://pypi.org/project/safety/) Dependabot, [`pip-audit`](https://pypi.org/project/pip-audit/), trivy and the likes.
+- [ ] Persistent state representation of a project's security posture.
+- [ ] Graphical DAG analysis of transitive dependencies.
+- [ ] Advanced filtering, searching, and terminal UI improvements for vulnerability display.
 
-## 🐰 Todo
+## Donate
 
-As of December 24, 2024:
-
-- [ ] Gather time to work on it (incredible task as a ~~high schooler~~ college freshman)
-- [ ] Persistent state representation of a project's security.
-- [ ] Graphical analysis of dependencies and their dependencies, and so on.
-- [ ] Better display, search, filter of vulns  
-
-## 🐹 Donate
-
-I started this project when I was a broke high school student, now I'm a broke college student. Consider donating:
-
+I started this project when I was a broke high school student, and now I'm a broke college student. If Pyscan has saved your CI/CD pipelines some precious time and RAM, consider buying me a coffee:
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Z8Z74DCR4)

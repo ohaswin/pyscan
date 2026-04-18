@@ -1,19 +1,37 @@
-# 🚀 Benchmarks
-
-- performed on a `requirements.txt` containing **234** packages along with their versions.
-- I know a benchmark is usually done with something to compare against, but I couldn't find anything like pyscan, at least not yet.
-- Reccomend something that can be tested along with pyscan!
-- the benchmark has been performed, using [hyperfine](https://github.com/sharkdp/hyperfine) with the following command :
-
-```bash
-hyperfine --runs 3 '.\target\release\pyscan.exe' --shell=none --export-markdown benchmarks.md --warmup 1
-```
-
-| Command | Mean [s] | Min [s] | Max [s] | Relative |
-|:---|---:|---:|---:|---:|
-| `'.\target\release\pyscan.exe'` | 23.345 ± 0.892 | 22.731 | 24.369 | 1.00 |
+> [!NOTE]
+> The benchmarks were performed on a 12th Gen Intel i5 machine running Arch Linux, testing across three distinct dataset sizes: Small (15 dependencies), Medium (88 dependencies), and Large (714 dependencies). Done using `hyperfine`. 3 warmups and 5 runs. It is reproducible, find more about it in [benchmarks](./benchmarks/) directory.
 
 
-- As pyscan mainly depends on making API calls, this benchmark is obviously almost variable.
+### Execution Time (Lower is better)
 
-There will be consistent effort regarding the optimization of pyscan in the future. This benchmark was 6min 8s before I switched to a batched API and started using references instead of moving, imagine what it'll be in the coming months! Still learning, still growing.
+![Execution Time Chart](./benchmarks/assets/execution_time.svg)
+
+*Note: Pyscan achieves a massive **5.25x speedup** on medium datasets and a **2.33x speedup** on large datasets.*
+
+### Memory Footprint
+
+![Memory Footprint Chart](./benchmarks/assets/memory_usage.svg)
+
+---
+
+### **Why is the Large dataset (5.7s) faster than the Small dataset (7.6s)?**
+
+Pyscan operates on an $O(\text{vulns})$ time complexity model, not an $O(\text{deps})$ model. 
+1. Pyscan uses a highly optimized batch query to ask the OSV database about all dependencies in a *single HTTP request*. 
+2. However, for every vulnerability found, Pyscan concurrently fetches additional details.
+
+The execution time is governed by the API's network latency (~776ms). 
+
+The Small dataset simply contained dependencies with a higher density of vulnerabilities, triggering more parallel network requests than the Large dataset. 
+
+This is an advantage in production systems because it does not matter whether your project has 10 or 10,000 dependencies, its runtime is solely based on the number of vulnerabilities. Get less vulnerabilities, spend less time running.
+
+
+### Memory Profile
+
+The most striking advantage of Pyscan is its memory efficiency. Whether scanning 15 packages or 700+, Pyscan's RAM usage remains completely flat (between 42MB and 54MB). Pyscan leverages Rust's zero-cost abstractions and efficient memory management. Data is streamed and dropped as soon as it's processed, making Pyscan the perfect tool for memory-constrained CI/CD pipelines.
+
+
+This architecture already obliterates older versions of Pyscan (which took minutes to run) by abandoning sequential queries for parallel `reqwest` batching.
+
+Pyscan could **theoretically** run in $O(1)$ if the OSV database API provided the full vulnerability details in the initial batch response or had a batched `vulninfo` API Endpoint. The only real bottleneck is having to send an HTTP request everytime to fetch each vuln's details other than the usual network latency.
