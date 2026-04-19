@@ -119,10 +119,13 @@ CLI args parsed (clap)
        │              │    ├─ deps → Vec<Query> → QueryBatched → JSON body
        │              │    └─ response → QueryResponse { results: Vec<QueryResult> }
        │              │
-       │              ├─ For each result with vulns:
-       │              │    ├─ Filter against VULN_IGNORE + --ignorevulns (unless --pedantic)
-       │              │    ├─ futures::future::join_all(vuln_id(id)...)  ← PARALLEL fetch
-       │              │    │    └─ GET /v1/vulns/{id} → Vuln struct (concurrent HTTP)
+       │              ├─ Extract unique vuln IDs from all results:
+       │              │    └─ Filter against VULN_IGNORE + --ignorevulns (unless --pedantic)
+       │              │
+       │              ├─ futures::future::join_all(vuln_id(id)...)  ← GLOBAL PARALLEL fetch
+       │              │    └─ GET /v1/vulns/{id} → Vuln struct (concurrent HTTP)
+       │              │
+       │              ├─ Map fetched vulns back to dependencies:
        │              │    └─ Collect into Vec<ScannedDependency>
        │              │
        │              ├─ display::display_queried(&scanneddeps, &mut imports_info)
@@ -155,7 +158,7 @@ CLI args parsed (clap)
 | **PipCache init** | `tokio::task::spawn` (fire-and-forget) | Runs `pip list` (blocking subprocess!) on a separate Tokio task. Known issue — author notes it "still blocks" because `pip_list()` is sync and async closures aren't stable yet. |
 | **Version resolution** | `futures::future::join_all` | All missing dependency versions are resolved concurrently via async `VersionStatus::choose()` calls. |
 | **OSV batch query** | Single `POST` await | The batch API reduces N queries to 1. |
-| **Vuln detail fetching** | `futures::future::join_all` (parallel) | All `vuln_id()` calls are dispatched concurrently. For 10 vulns at ~150ms each: ~150ms total vs ~1.5s sequential. |
+| **Vuln detail fetching** | `futures::future::join_all` (global parallel) | All unique `vuln_id()` calls across all dependencies are dispatched concurrently in a single network wave. |
 | **Docker subprocess calls** | `tokio::process::Command` (async) | Docker `create`, `cp`, `stop`, `rm` commands use async subprocess execution, freeing the Tokio thread pool. |
 | **Pip subprocess calls** | `std::process::Command` (synchronous) | `pip show` and `pip list` remain blocking. `pip_list()` is called from `LazyLock` init (sync context). |
 

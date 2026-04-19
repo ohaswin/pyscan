@@ -13,6 +13,8 @@ pub enum FileTypes {
     Constraints,
     SetupPy,
     UvLock,
+    CycloneDx,
+    Spdx,
 }
 
 #[derive(Debug, Clone)]

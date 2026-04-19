@@ -486,3 +486,55 @@ fn parse_uv_specifier(
         }
     }
 }
+
+pub fn extract_imports_cyclonedx(content: String, imp: &mut Vec<Dependency>) {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+        if let Some(components) = v.get("components").and_then(|c| c.as_array()) {
+            for comp in components {
+                if let (Some(name), Some(version)) = (
+                    comp.get("name").and_then(|n| n.as_str()),
+                    comp.get("version").and_then(|v| v.as_str()),
+                ) {
+                    imp.push(Dependency {
+                        name: name.to_string(),
+                        version: Some(version.to_string()),
+                        comparator: None,
+                        version_status: VersionStatus {
+                            pypi: false,
+                            pip: false,
+                            source: true,
+                        },
+                    });
+                }
+            }
+        }
+    } else {
+        eprintln!("Failed to parse CycloneDX SBOM JSON");
+    }
+}
+
+pub fn extract_imports_spdx(content: String, imp: &mut Vec<Dependency>) {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+        if let Some(packages) = v.get("packages").and_then(|c| c.as_array()) {
+            for pkg in packages {
+                if let (Some(name), Some(version)) = (
+                    pkg.get("name").and_then(|n| n.as_str()),
+                    pkg.get("versionInfo").and_then(|v| v.as_str()),
+                ) {
+                    imp.push(Dependency {
+                        name: name.to_string(),
+                        version: Some(version.to_string()),
+                        comparator: None,
+                        version_status: VersionStatus {
+                            pypi: false,
+                            pip: false,
+                            source: true,
+                        },
+                    });
+                }
+            }
+        }
+    } else {
+        eprintln!("Failed to parse SPDX SBOM JSON");
+    }
+}

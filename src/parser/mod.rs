@@ -70,6 +70,22 @@ pub async fn scan_dir(dir: &Path) -> crate::error::Result<()> {
                     path: OsString::from(entry.path()),
                 });
             }
+            // cyclonedx
+            else if filename == "bom.json" || filename == "cyclonedx.json" {
+                result.add(FoundFile {
+                    name: filename,
+                    filetype: FileTypes::CycloneDx,
+                    path: OsString::from(entry.path()),
+                });
+            }
+            // spdx
+            else if filename == "spdx.json" || filename == "bom.spdx.json" {
+                result.add(FoundFile {
+                    name: filename,
+                    filetype: FileTypes::Spdx,
+                    path: OsString::from(entry.path()),
+                });
+            }
         }
     }
 
@@ -87,6 +103,10 @@ async fn find_import(res: FoundFileResult) -> crate::error::Result<()> {
     } else if res.count(&FileTypes::UvLock) > 0 {
         // uv.lock has resolved versions — prefer over pyproject.toml
         find_uvlock_imports(files).await
+    } else if res.count(&FileTypes::CycloneDx) > 0 {
+        find_cyclonedx_imports(files).await
+    } else if res.count(&FileTypes::Spdx) > 0 {
+        find_spdx_imports(files).await
     } else if res.count(&FileTypes::Pyproject) > 0 {
         find_pyproject_imports(files).await
     } else if res.count(&FileTypes::SetupPy) > 0 {
@@ -219,6 +239,46 @@ async fn find_uvlock_imports(f: &[FoundFile]) -> crate::error::Result<()> {
                     });
                 }
                 Err(_) => eprintln!("There was a problem reading your uv.lock"),
+            }
+        }
+    }
+    scanner::start(imports, source_ctx).await
+}
+
+async fn find_cyclonedx_imports(f: &[FoundFile]) -> crate::error::Result<()> {
+    print_source_info("CycloneDX SBOM");
+
+    let mut imports = Vec::new();
+    let mut source_ctx: Option<SourceContext> = None;
+
+    for file in f {
+        if file.filetype == FileTypes::CycloneDx {
+            match fs::read_to_string(&file.path) {
+                Ok(content) => {
+                    extractor::extract_imports_cyclonedx(content.clone(), &mut imports);
+                    // Do not provide source_ctx for SBOMs to avoid parsing/rendering massive JSON files in miette
+                }
+                Err(_) => eprintln!("There was a problem reading your CycloneDX SBOM"),
+            }
+        }
+    }
+    scanner::start(imports, source_ctx).await
+}
+
+async fn find_spdx_imports(f: &[FoundFile]) -> crate::error::Result<()> {
+    print_source_info("SPDX SBOM");
+
+    let mut imports = Vec::new();
+    let mut source_ctx: Option<SourceContext> = None;
+
+    for file in f {
+        if file.filetype == FileTypes::Spdx {
+            match fs::read_to_string(&file.path) {
+                Ok(content) => {
+                    extractor::extract_imports_spdx(content.clone(), &mut imports);
+                    // Do not provide source_ctx for SBOMs
+                }
+                Err(_) => eprintln!("There was a problem reading your SPDX SBOM"),
             }
         }
     }
