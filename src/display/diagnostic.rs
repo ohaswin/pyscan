@@ -19,8 +19,54 @@ pub struct VulnDiagnostic {
     #[source_code]
     pub source_code: NamedSource<String>,
 
-    #[label("vulnerable dependency declared here")]
+    #[label("{label_text}")]
     pub span: SourceSpan,
+
+    pub label_text: String,
+}
+
+use std::path::Path;
+use std::fs;
+
+/// Try to find where a dependency is imported in the project's .py files.
+fn find_import_source(dep_name: &str, dir: &Path) -> Option<(String, String, usize, usize)> {
+    let python_pkg_name = dep_name.replace('-', "_");
+    
+    // Very simple heuristic search strings
+    let t1 = format!("import {}", python_pkg_name);
+    let t2 = format!("from {}", python_pkg_name);
+
+    fn search_dir(dir: &Path, targets: &[&str], depth: u8) -> Option<(String, String, usize, usize)> {
+        if depth > 3 { return None; } // Limit recursion depth
+        let Ok(entries) = fs::read_dir(dir) else { return None; };
+        
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let name = path.file_name().unwrap_or_default().to_string_lossy();
+                if name.starts_with('.') || name == "venv" || name == "env" || name == "site-packages" || name == "__pycache__" {
+                    continue;
+                }
+                if let Some(res) = search_dir(&path, targets, depth + 1) {
+                    return Some(res);
+                }
+            } else if path.extension().map_or(false, |ext| ext == "py") {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    for line in content.lines() {
+                        let trimmed = line.trim();
+                        if targets.iter().any(|t| trimmed.starts_with(*t)) {
+                            if let Some(offset) = content.find(line) {
+                                return Some((path.to_string_lossy().to_string(), content.clone(), offset, line.len()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    search_dir(dir, &[&t1, &t2], 0)
 }
 
 /// Build a miette diagnostic for a specific vulnerability, highlighting the
@@ -34,23 +80,43 @@ pub fn build_diagnostic(
     dep_name: &str,
     fixed_version: &str,
 ) -> Option<Report> {
-    // Case-insensitive search for the dependency name in the source file
-    let lower_content = source_content.to_lowercase();
-    let lower_name = dep_name.to_lowercase();
-    let offset = lower_content.find(&lower_name)?;
-
-    let line_end = source_content[offset..]
-        .find('\n')
-        .map(|i| offset + i)
-        .unwrap_or(source_content.len());
-    let span_len = line_end - offset;
+    // 1. Try to find where the user actually imports it in their code
+    let mut project_dir = Path::new(source_file).parent().unwrap_or_else(|| Path::new("."));
+    if project_dir.as_os_str().is_empty() {
+        project_dir = Path::new(".");
+    }
+    
+    let (final_file, final_content, offset, span_len, label_text) = 
+        if let Some((f, c, o, l)) = find_import_source(dep_name, project_dir) {
+            (f, c, o, l, "vulnerable dependency imported here".to_string())
+        } else {
+            // Fallback: point to the manifest file declaration
+            let lower_content = source_content.to_lowercase();
+            let lower_name = dep_name.to_lowercase();
+            if let Some(offset) = lower_content.find(&lower_name) {
+                let line_end = source_content[offset..]
+                    .find('\n')
+                    .map(|i| offset + i)
+                    .unwrap_or(source_content.len());
+                (
+                    source_file.to_string(), 
+                    source_content.to_string(), 
+                    offset, 
+                    line_end - offset,
+                    "vulnerable dependency declared here".to_string()
+                )
+            } else {
+                return None;
+            }
+        };
 
     let diag = VulnDiagnostic {
         vuln_id: vuln.id.clone(),
         summary: summarize(&vuln.details, 150),
         suggestion: format!("Update '{}' to {}", dep_name, fixed_version),
-        source_code: NamedSource::new(source_file, source_content.to_string()),
+        source_code: NamedSource::new(final_file, final_content),
         span: (offset, span_len).into(),
+        label_text,
     };
 
     Some(Report::new(diag))
