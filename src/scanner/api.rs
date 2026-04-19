@@ -111,33 +111,46 @@ impl Osv {
 
         let mut imports_info = imports_info;
 
-        for vres in parsed.results {
-            if let Some(vulns) = vres.vulns {
-                // Filter vuln IDs to fetch
-                let ids_to_fetch: Vec<&str> = vulns.iter()
-                    .filter(|qv| {
-                        !(VULN_IGNORE.contains(&qv.id) || ARGS.get().unwrap().ignorevulns.contains(&qv.id))
-                            || ARGS.get().unwrap().pedantic
-                    })
-                    .map(|qv| qv.id.as_str())
-                    .collect();
+        let mut unique_ids_to_fetch: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-                // Log ignored vulns
-                for qv in vulns.iter() {
-                    if (VULN_IGNORE.contains(&qv.id) || ARGS.get().unwrap().ignorevulns.contains(&qv.id))
-                        && !ARGS.get().unwrap().pedantic
-                    {
+        // Extraction Phase
+        for vres in &parsed.results {
+            if let Some(vulns) = &vres.vulns {
+                for qv in vulns {
+                    let should_ignore = (VULN_IGNORE.contains(&qv.id) || ARGS.get().unwrap().ignorevulns.contains(&qv.id))
+                        && !ARGS.get().unwrap().pedantic;
+
+                    if should_ignore {
                         println!("Ignoring vuln with ID: {}", qv.id);
+                    } else {
+                        unique_ids_to_fetch.insert(qv.id.clone());
                     }
                 }
+            }
+        }
 
-                // Fetch vuln details in parallel
-                let vecvulns: Vec<Vuln> = future::join_all(
-                    ids_to_fetch.iter().map(|id| self.vuln_id(id))
-                ).await
-                .into_iter()
-                .filter_map(|r| r.ok())
-                .collect();
+        // Fetch Phase
+        let fetched_vulns: Vec<Vuln> = future::join_all(
+            unique_ids_to_fetch.iter().map(|id| self.vuln_id(id))
+        ).await
+        .into_iter()
+        .filter_map(|r| r.ok())
+        .collect();
+
+        // Assembly Phase
+        let mut vuln_map: std::collections::HashMap<String, Vuln> = std::collections::HashMap::new();
+        for vuln in fetched_vulns {
+            vuln_map.insert(vuln.id.clone(), vuln);
+        }
+
+        for vres in parsed.results {
+            if let Some(vulns) = vres.vulns {
+                let mut vecvulns: Vec<Vuln> = Vec::new();
+                for qv in vulns {
+                    if let Some(v) = vuln_map.get(&qv.id) {
+                        vecvulns.push(v.clone());
+                    }
+                }
 
                 let structvuln = Vulnerability { vulns: vecvulns };
                 if let Some(ref b) = bar { b.inc(1); }
