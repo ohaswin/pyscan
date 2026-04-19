@@ -138,17 +138,26 @@ function createChart(data, filename, title, xFormat = d => d) {
     d3.select(document.body).selectAll('*').remove();
 }
 
-const timeData = [
-    { dataset: 'Small (15 deps)', pyscan: 7.6, 'pip-audit': 3.8, safety: 4.5 },
-    { dataset: 'Medium (88 deps)', pyscan: 7.9, 'pip-audit': 41.7, safety: 18.2 },
-    { dataset: 'Large (714 deps)', pyscan: 5.7, 'pip-audit': 13.3, safety: 32.1 }
-];
+const reportData = JSON.parse(fs.readFileSync(__dirname + '/../results/benchmark_report.json', 'utf8'));
 
-const memData = [
-    { dataset: 'Small (15 deps)', pyscan: 42, 'pip-audit': 80, safety: 65 },
-    { dataset: 'Medium (88 deps)', pyscan: 54, 'pip-audit': 426, safety: 120 },
-    { dataset: 'Large (714 deps)', pyscan: 42, 'pip-audit': 117, safety: 210 }
-];
+const formatDatasetName = (entry) => {
+    const capitalized = entry.dataset.charAt(0).toUpperCase() + entry.dataset.slice(1);
+    return `${capitalized} (${entry.dependency_count} deps)`;
+};
+
+const timeData = reportData.comparative_summary.map(entry => ({
+    dataset: formatDatasetName(entry),
+    pyscan: Number(entry.pyscan_mean_s.toFixed(1)),
+    'pip-audit': Number(entry.pip_audit_mean_s.toFixed(1)),
+    safety: Number(entry.safety_mean_s.toFixed(1))
+}));
+
+const memData = reportData.memory_profile.map((entry, index) => ({
+    dataset: formatDatasetName(reportData.comparative_summary[index]),
+    pyscan: entry.pyscan_peak_rss_mb,
+    'pip-audit': entry.pip_audit_peak_rss_mb,
+    safety: entry.safety_peak_rss_mb
+}));
 
 createChart(timeData, __dirname + '/execution_time.svg', 'Execution Time', d => d + 's');
 createChart(memData, __dirname + '/memory_usage.svg', 'Peak Memory Usage (RSS)', d => d + ' MB');

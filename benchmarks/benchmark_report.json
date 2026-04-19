@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-04-18T12:23:29Z",
+    "generated_at": "2026-04-19T03:33:28Z",
     "hyperfine_runs": 5,
     "warmup_runs": 3,
     "script": "benchmarks/run_benchmarks.sh"
@@ -8,7 +8,7 @@
   "machine_profile": {
     "cpu_model": "12th Gen Intel(R) Core(TM) i5-12450H",
     "cpu_cores_physical": 12,
-    "cpu_cores_logical": 1,
+    "cpu_cores_logical": 12,
     "ram_total": "15Gi",
     "ram_available": "14Gi",
     "kernel": "6.19.11-arch1-1",
@@ -17,46 +17,56 @@
     "tool_versions": {
       "pyscan": "pyscan 2.0.0",
       "pip_audit": "pip-audit 2.10.0",
+      "safety": "safety, version 3.7.0",
       "hyperfine": "hyperfine 1.20.0"
     }
   },
   "network": {
     "osv_api_latency_ms": {
-      "mean": 776.9,
-      "stddev": 71.8,
+      "mean": 763.8,
+      "stddev": 69.8,
       "samples": 5
     },
-    "download_speed_mbps": 12.96
+    "download_speed_mbps": 83.52
   },
   "comparative_summary": [
     {
       "dataset": "small",
       "dependency_count": 15,
-      "pyscan_mean_s": 7.63576160394,
-      "pip_audit_mean_s": 3.80295885094,
-      "pyscan_stddev_s": 0.41897303334068325,
-      "pip_audit_stddev_s": 0.06852006519199569,
-      "speedup_factor": 0.5,
+      "pyscan_mean_s": 6.235738013540001,
+      "pip_audit_mean_s": 6.73128645534,
+      "safety_mean_s": 8.46756604914,
+      "pyscan_stddev_s": 0.3763201520218467,
+      "pip_audit_stddev_s": 0.09564774897623526,
+      "safety_stddev_s": 0.5069031885181112,
+      "speedup_factor": 1.08,
+      "speedup_vs_safety": 1.36,
       "stability": "high"
     },
     {
       "dataset": "medium",
       "dependency_count": 88,
-      "pyscan_mean_s": 7.93478154546,
-      "pip_audit_mean_s": 41.67508004126,
-      "pyscan_stddev_s": 0.3915400138164424,
-      "pip_audit_stddev_s": 1.7788499084426264,
-      "speedup_factor": 5.25,
+      "pyscan_mean_s": 6.940392254,
+      "pip_audit_mean_s": 62.241246221000004,
+      "safety_mean_s": 10.387434041800002,
+      "pyscan_stddev_s": 0.6525442270506754,
+      "pip_audit_stddev_s": 1.58233376736734,
+      "safety_stddev_s": 2.098630224307739,
+      "speedup_factor": 8.97,
+      "speedup_vs_safety": 1.5,
       "stability": "high"
     },
     {
       "dataset": "large",
       "dependency_count": 714,
-      "pyscan_mean_s": 5.70766335242,
-      "pip_audit_mean_s": 13.278593648220001,
-      "pyscan_stddev_s": 0.2596193440140456,
-      "pip_audit_stddev_s": 0.5679110948374638,
-      "speedup_factor": 2.33,
+      "pyscan_mean_s": 5.37062894166,
+      "pip_audit_mean_s": 18.944299657259997,
+      "safety_mean_s": 8.189016012660002,
+      "pyscan_stddev_s": 0.4406733949189799,
+      "pip_audit_stddev_s": 0.34108855983218916,
+      "safety_stddev_s": 0.3776180484416263,
+      "speedup_factor": 3.53,
+      "speedup_vs_safety": 1.52,
       "stability": "high"
     }
   ],
@@ -67,32 +77,47 @@
       "results": [
         {
           "command": "pyscan (small)",
-          "mean_s": 7.63576160394,
-          "stddev_s": 0.41897303334068325,
-          "median_s": 7.519634137940001,
-          "min_s": 7.19950385794,
-          "max_s": 8.31872336794,
+          "mean_s": 6.235738013540001,
+          "stddev_s": 0.3763201520218467,
+          "median_s": 6.16566591174,
+          "min_s": 5.80819485874,
+          "max_s": 6.78693176174,
           "times": [
-            7.46234074194,
-            8.31872336794,
-            7.19950385794,
-            7.67860591394,
-            7.519634137940001
+            6.78693176174,
+            6.16566591174,
+            5.80819485874,
+            6.40067031474,
+            6.01722722074
           ]
         },
         {
           "command": "pip-audit (small)",
-          "mean_s": 3.80295885094,
-          "stddev_s": 0.06852006519199569,
-          "median_s": 3.8234073419400003,
-          "min_s": 3.6826873209400004,
-          "max_s": 3.84650179094,
+          "mean_s": 6.73128645534,
+          "stddev_s": 0.09564774897623526,
+          "median_s": 6.7066632537399995,
+          "min_s": 6.62463474074,
+          "max_s": 6.87143196874,
           "times": [
-            3.8234073419400003,
-            3.84650179094,
-            3.81666104694,
-            3.6826873209400004,
-            3.8455367539400003
+            6.7066632537399995,
+            6.62463474074,
+            6.67718744474,
+            6.87143196874,
+            6.77651486874
+          ]
+        },
+        {
+          "command": "safety (small)",
+          "mean_s": 8.46756604914,
+          "stddev_s": 0.5069031885181112,
+          "median_s": 8.481260178740001,
+          "min_s": 7.96624677374,
+          "max_s": 9.10679449374,
+          "times": [
+            7.9697513427399995,
+            8.81377745674,
+            8.481260178740001,
+            9.10679449374,
+            7.96624677374
           ]
         }
       ]
@@ -103,32 +128,47 @@
       "results": [
         {
           "command": "pyscan (medium)",
-          "mean_s": 7.93478154546,
-          "stddev_s": 0.3915400138164424,
-          "median_s": 7.83916733946,
-          "min_s": 7.4714277974600005,
-          "max_s": 8.478876546459999,
+          "mean_s": 6.940392254,
+          "stddev_s": 0.6525442270506754,
+          "median_s": 6.9724037334,
+          "min_s": 6.0777297804,
+          "max_s": 7.7395674594,
           "times": [
-            7.72631806246,
-            7.4714277974600005,
-            8.15811798146,
-            7.83916733946,
-            8.478876546459999
+            7.3554221614,
+            6.0777297804,
+            7.7395674594,
+            6.9724037334,
+            6.5568381354000005
           ]
         },
         {
           "command": "pip-audit (medium)",
-          "mean_s": 41.67508004126,
-          "stddev_s": 1.7788499084426264,
-          "median_s": 40.97608487146,
-          "min_s": 40.30614838246,
-          "max_s": 44.65084369246,
+          "mean_s": 62.241246221000004,
+          "stddev_s": 1.58233376736734,
+          "median_s": 63.006549242400006,
+          "min_s": 59.6742498614,
+          "max_s": 63.577520410400005,
           "times": [
-            40.97608487146,
-            40.50443061446,
-            41.93789264546,
-            44.65084369246,
-            40.30614838246
+            59.6742498614,
+            61.7861966154,
+            63.577520410400005,
+            63.1617149754,
+            63.006549242400006
+          ]
+        },
+        {
+          "command": "safety (medium)",
+          "mean_s": 10.387434041800002,
+          "stddev_s": 2.098630224307739,
+          "median_s": 11.2070164604,
+          "min_s": 7.6790002634,
+          "max_s": 12.446243346400001,
+          "times": [
+            11.938995291400001,
+            11.2070164604,
+            12.446243346400001,
+            8.665914847400002,
+            7.6790002634
           ]
         }
       ]
@@ -139,32 +179,47 @@
       "results": [
         {
           "command": "pyscan (large)",
-          "mean_s": 5.70766335242,
-          "stddev_s": 0.2596193440140456,
-          "median_s": 5.7708422400199995,
-          "min_s": 5.28539923802,
-          "max_s": 5.93906467102,
+          "mean_s": 5.37062894166,
+          "stddev_s": 0.4406733949189799,
+          "median_s": 5.149138270460001,
+          "min_s": 4.992509693460001,
+          "max_s": 5.9068045194600005,
           "times": [
-            5.93906467102,
-            5.7708422400199995,
-            5.28539923802,
-            5.658341486019999,
-            5.88466912702
+            5.7865619844600005,
+            5.018130240460001,
+            4.992509693460001,
+            5.149138270460001,
+            5.9068045194600005
           ]
         },
         {
           "command": "pip-audit (large)",
-          "mean_s": 13.278593648220001,
-          "stddev_s": 0.5679110948374638,
-          "median_s": 13.43046304802,
-          "min_s": 12.59648854802,
-          "max_s": 13.81454196902,
+          "mean_s": 18.944299657259997,
+          "stddev_s": 0.34108855983218916,
+          "median_s": 19.02118094446,
+          "min_s": 18.568252015459997,
+          "max_s": 19.280103333459998,
           "times": [
-            13.43046304802,
-            12.76853745402,
-            13.78293722202,
-            13.81454196902,
-            12.59648854802
+            19.02118094446,
+            18.568252015459997,
+            19.24583080946,
+            19.280103333459998,
+            18.606131183459997
+          ]
+        },
+        {
+          "command": "safety (large)",
+          "mean_s": 8.189016012660002,
+          "stddev_s": 0.3776180484416263,
+          "median_s": 7.97405913546,
+          "min_s": 7.882734855460001,
+          "max_s": 8.62888313346,
+          "times": [
+            7.882734855460001,
+            8.57144205746,
+            7.887960881460001,
+            8.62888313346,
+            7.97405913546
           ]
         }
       ]
@@ -173,24 +228,30 @@
   "memory_profile": [
     {
       "dataset": "small",
-      "pyscan_peak_rss_kb": 43412,
-      "pip_audit_peak_rss_kb": 81856,
+      "pyscan_peak_rss_kb": 43308,
+      "pip_audit_peak_rss_kb": 82016,
+      "safety_peak_rss_kb": 327472,
       "pyscan_peak_rss_mb": 42,
-      "pip_audit_peak_rss_mb": 80
+      "pip_audit_peak_rss_mb": 80,
+      "safety_peak_rss_mb": 320
     },
     {
       "dataset": "medium",
-      "pyscan_peak_rss_kb": 54952,
-      "pip_audit_peak_rss_kb": 435948,
-      "pyscan_peak_rss_mb": 54,
-      "pip_audit_peak_rss_mb": 426
+      "pyscan_peak_rss_kb": 54092,
+      "pip_audit_peak_rss_kb": 442988,
+      "safety_peak_rss_kb": 328024,
+      "pyscan_peak_rss_mb": 53,
+      "pip_audit_peak_rss_mb": 433,
+      "safety_peak_rss_mb": 320
     },
     {
       "dataset": "large",
-      "pyscan_peak_rss_kb": 43456,
-      "pip_audit_peak_rss_kb": 119680,
+      "pyscan_peak_rss_kb": 43416,
+      "pip_audit_peak_rss_kb": 119728,
+      "safety_peak_rss_kb": 328648,
       "pyscan_peak_rss_mb": 42,
-      "pip_audit_peak_rss_mb": 117
+      "pip_audit_peak_rss_mb": 117,
+      "safety_peak_rss_mb": 321
     }
   ]
 }

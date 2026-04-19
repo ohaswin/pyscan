@@ -30,10 +30,14 @@ function createReadmeChart() {
         .attr('stroke', '#E5E7EB')
         .attr('stroke-width', 1);
 
+    const reportData = JSON.parse(fs.readFileSync(__dirname + '/../results/benchmark_report.json', 'utf8'));
+    const mediumSummary = reportData.comparative_summary.find(d => d.dataset === 'medium');
+    const mediumMem = reportData.memory_profile.find(d => d.dataset === 'medium');
+
     const data = [
-        { tool: 'Pyscan', time: 7.9, mem: 54 },
-        { tool: 'Pip-audit', time: 41.7, mem: 426 },
-        { tool: 'Safety', time: 18.2, mem: 120 }
+        { tool: 'Pyscan', time: Number(mediumSummary.pyscan_mean_s.toFixed(1)), mem: mediumMem.pyscan_peak_rss_mb },
+        { tool: 'Pip-audit', time: Number(mediumSummary.pip_audit_mean_s.toFixed(1)), mem: mediumMem.pip_audit_peak_rss_mb },
+        { tool: 'Safety', time: Number(mediumSummary.safety_mean_s.toFixed(1)), mem: mediumMem.safety_peak_rss_mb }
     ];
 
     const color = d3.scaleOrdinal()
@@ -58,7 +62,7 @@ function createReadmeChart() {
         .attr('transform', `translate(${margin.left},${margin.top})`);
         
     const xTime = d3.scaleLinear()
-        .domain([0, 45])
+        .domain([0, d3.max(data, d => d.time) * 1.1])
         .range([0, maxBarWidth]);
 
     // Title Time
@@ -78,7 +82,7 @@ function createReadmeChart() {
         .style('font-size', '13px')
         .style('font-weight', '400')
         .style('fill', '#9CA3AF')
-        .text('(88 deps)');
+        .text(`(${mediumSummary.dependency_count} deps)`);
 
     // Labels Time
     gTime.selectAll('.tool-label')

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="./benchmarks/assets/readme_benchmark.svg" alt="Pyscan Performance Comparison">
+  <img src="./benchmarks/assets/readme_benchmark.svg" alt="Pyscan Performance Benchmark">
 </p>
 
 <p align="center">

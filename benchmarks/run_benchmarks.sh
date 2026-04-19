@@ -75,13 +75,18 @@ make_pyscan_dir() {
 # ── Preflight Checks ────────────────────────────────────────────────────────
 header "🔍 Preflight Checks"
 
-REQUIRED_TOOLS=(hyperfine pyscan pip-audit safety jq curl)
+REQUIRED_TOOLS=(hyperfine pip-audit safety jq curl taskset)
 for tool in "${REQUIRED_TOOLS[@]}"; do
   if ! command -v "$tool" &>/dev/null; then
     fail "'$tool' is not installed or not in PATH."
   fi
   ok "$tool  ✓"
 done
+
+if [[ ! -x "$PROJECT_ROOT/target/release/pyscan" ]]; then
+  fail "pyscan (release binary) not found. Run 'cargo build --release' first."
+fi
+ok "pyscan (release)  ✓"
 
 # Check for /usr/bin/time (GNU time, NOT the shell built-in) — optional
 HAS_GNU_TIME=false
@@ -119,7 +124,7 @@ RAM_AVAILABLE=$(free -h | awk '/^Mem:/{print $7}')
 KERNEL=$(uname -r)
 OS_PRETTY=$(grep -m1 'PRETTY_NAME' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' || uname -s)
 ARCH=$(uname -m)
-PYSCAN_VERSION=$(pyscan --version 2>&1 | head -1)
+PYSCAN_VERSION=$("$PROJECT_ROOT/target/release/pyscan" --version 2>&1 | head -1)
 PIP_AUDIT_VERSION=$(pip-audit --version 2>&1 | head -1)
 HYPERFINE_VERSION=$(hyperfine --version 2>&1 | head -1)
 SAFETY_VERSION=$(safety --version 2>/dev/null | head -1)
@@ -228,11 +233,11 @@ for entry in "${DATASETS[@]}"; do
     --ignore-failure \
     --export-json "$json_out" \
     --command-name "pyscan ($label)" \
-    "pyscan -d '$pyscan_dir'" \
+    "taskset -c 0 '$PROJECT_ROOT/target/release/pyscan' -d '$pyscan_dir' --cache-off" \
     --command-name "pip-audit ($label)" \
-    "pip-audit -r '$path' --progress-spinner off" \
+    "taskset -c 0 pip-audit -r '$path' --progress-spinner off" \
     --command-name "safety ($label)" \
-    "safety check -r '$path'" \
+    "taskset -c 0 safety check -r '$path'" \
     2>&1 | tee "$OUTPUT_DIR/hyperfine_${label}.log"
 
   # Extract hyperfine results and add dep_count metadata
@@ -269,19 +274,19 @@ if [[ "$HAS_GNU_TIME" == "true" ]]; then
 
     info "Memory profile: pyscan ($label)..."
     pyscan_mem_out="$OUTPUT_DIR/mem_pyscan_${label}.txt"
-    /usr/bin/time -v pyscan -d "$pyscan_dir" \
+    /usr/bin/time -v taskset -c 0 "$PROJECT_ROOT/target/release/pyscan" -d "$pyscan_dir" --cache-off \
       >"$OUTPUT_DIR/mem_pyscan_${label}_stdout.txt" 2>"$pyscan_mem_out" || true
     PYSCAN_RSS=$(grep 'Maximum resident set size' "$pyscan_mem_out" | awk '{print $NF}')
 
     info "Memory profile: pip-audit ($label)..."
     pipaudit_mem_out="$OUTPUT_DIR/mem_pipaudit_${label}.txt"
-    /usr/bin/time -v pip-audit -r "$path" --progress-spinner off \
+    /usr/bin/time -v taskset -c 0 pip-audit -r "$path" --progress-spinner off \
       >"$OUTPUT_DIR/mem_pipaudit_${label}_stdout.txt" 2>"$pipaudit_mem_out" || true
     PIPAUDIT_RSS=$(grep 'Maximum resident set size' "$pipaudit_mem_out" | awk '{print $NF}')
 
     info "Memory profile: safety ($label)..."
     safety_mem_out="$OUTPUT_DIR/mem_safety_${label}.txt"
-    /usr/bin/time -v safety check -r "$path" \
+    /usr/bin/time -v taskset -c 0 safety check -r "$path" \
       >"$OUTPUT_DIR/mem_safety_${label}_stdout.txt" 2>"$safety_mem_out" || true
     SAFETY_RSS=$(grep 'Maximum resident set size' "$safety_mem_out" | awk '{print $NF}')
 
