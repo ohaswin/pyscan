@@ -177,22 +177,15 @@ async fn find_reqs_imports(f: &[FoundFile]) -> crate::error::Result<()> {
             let file_name = file.name.to_string_lossy().to_string();
             print_source_info(&file_name);
 
-            if let Ok(fhandle) = File::open(&file.path) {
-                // Also read the full content for SourceContext
-                let full_content = fs::read_to_string(&file.path).ok();
+            if let Ok(content) = fs::read_to_string(&file.path) {
+                extractor::extract_imports_reqs(content.clone(), &mut imports);
 
-                let reader = BufReader::new(fhandle);
-                for line in reader.lines().flatten() {
-                    // pep-508 does not parse --hash embeds in requirements.txt
-                    extractor::extract_imports_reqs(line.trim().to_string(), &mut imports)
-                }
-
-                if let Some(content) = full_content {
-                    source_ctx = Some(SourceContext {
-                        file_path: file_name,
-                        content,
-                    });
-                }
+                source_ctx = Some(SourceContext {
+                    file_path: file_name,
+                    content,
+                });
+            } else {
+                eprintln!("There was a problem reading your {}", file.name.to_string_lossy());
             }
         }
     }
@@ -249,7 +242,7 @@ async fn find_cyclonedx_imports(f: &[FoundFile]) -> crate::error::Result<()> {
     print_source_info("CycloneDX SBOM");
 
     let mut imports = Vec::new();
-    let mut source_ctx: Option<SourceContext> = None;
+    let source_ctx: Option<SourceContext> = None;
 
     for file in f {
         if file.filetype == FileTypes::CycloneDx {
@@ -269,7 +262,7 @@ async fn find_spdx_imports(f: &[FoundFile]) -> crate::error::Result<()> {
     print_source_info("SPDX SBOM");
 
     let mut imports = Vec::new();
-    let mut source_ctx: Option<SourceContext> = None;
+    let source_ctx: Option<SourceContext> = None;
 
     for file in f {
         if file.filetype == FileTypes::Spdx {

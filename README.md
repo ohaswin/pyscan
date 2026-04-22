@@ -22,7 +22,8 @@
 Pyscan was engineered to solve the performance and memory bottlenecks of traditional Python-based security tools:
 - **Performance Gains:** Achieves up to a **5.25x speedup** against industry-standard tools like `pip-audit` and `safety` on medium to large datasets. Pyscan's runtime operates on an $O(\text{vulns})$ time complexity model, execution time scales with the number of vulnerabilities found, **not** the number of dependencies you have.
 - **Flat Memory Footprint:** Pyscan's memory usage stays completely flat (~45MB) whether you're scanning 15 dependencies or 700+ dependencies. Pretty solid for memory-constrained CI/CD pipelines.
-- **Universal Support:** Automatically resolves and extracts dependencies from `uv.lock`, `requirements.txt`, `pyproject.toml` (Poetry, Hatch, PDM, Flit), or dynamically by parsing your raw `.py` source code.
+- **Universal Support:** Automatically resolves and extracts dependencies from SBOMs (**CycloneDX**, **SPDX**), `uv.lock`, `requirements.txt`, `pyproject.toml` (Poetry, Hatch, PDM, Flit), or dynamically by parsing your raw `.py` source code.
+- **Reachability Analysis:** Pyscan goes beyond static manifest parsing. It uses heuristics to scan your source code, locating and highlighting exactly where a vulnerable dependency is imported, providing instant context for remediation.
 
 Read the deep-dive in [Benchmarks Report](BENCHMARKS.md).
 
@@ -55,10 +56,11 @@ pyscan -d path/to/src
 
 ### Dependency Resolution Precedence
 If multiple source files are present, Pyscan extracts dependencies following this priority chain:
-1. `uv.lock`
-2. `requirements.txt`
-3. `pyproject.toml`
-4. Raw Source Code (`.py`)
+1. SBOMs (`bom.json`, `spdx.json`)
+2. `uv.lock`
+3. `requirements.txt`
+4. `pyproject.toml`
+5. Raw Source Code (`.py`)
 
 *Pyscan will fall back to querying PyPI for the latest version if a dependency is found without a strictly pinned version, though adhering to PEP-508 syntax is highly recommended.*
 
@@ -72,10 +74,10 @@ Pyscan is a highly optimized tool, but it hasn't been battle-hardened across eve
 
 ## Roadmap (As of April 2026)
 
-- [ ] Add cyclonedx SBOM support.
+- [x] Add cyclonedx and SPDX SBOM support.
 - [ ] Persistent state representation of a project's security posture.
 - [ ] Graphical DAG analysis of transitive dependencies.
-- [ ] Advanced filtering, searching, and terminal UI improvements for vulnerability display.
+- [ ] Improved reachability analysis for deep-nested imports.
 
 ## Donate
 

@@ -8,6 +8,7 @@ use pep_508::{self, Spec};
 use regex::Regex;
 use std::sync::LazyLock;
 
+use crate::ARGS;
 use toml::{de::Error, Table, Value};
 
 static IMPORT_REGEX: LazyLock<Regex> = LazyLock::new(|| {
@@ -33,43 +34,115 @@ pub fn extract_imports_python(text: String, imp: &mut Vec<Dependency>) {
 }
 
 pub fn extract_imports_reqs(text: String, imp: &mut Vec<Dependency>) {
-    // requirements.txt uses a PEP 508 parser to parse dependencies accordingly
-
-    let parsed = pep_508::parse(text.as_str());
-
-    if let Ok(ref dep) = parsed {
-        let dname = dep.name.to_string();
-        if let Some(ver) = &dep.spec {
-            if let Spec::Version(verspec) = ver {
-                if let Some(v) = verspec.iter().next() {
-                    let version = v.version.to_string();
-                    let comparator = v.comparator;
-                    imp.push(Dependency {
-                        name: dname,
-                        version: Some(version),
-                        comparator: Some(comparator),
-                        version_status: VersionStatus {
-                            pypi: false,
-                            pip: false,
-                            source: true,
-                        },
-                    });
-                }
-            }
+    // Pass 1: Line joining (backslash handling)
+    let mut logical_lines = Vec::new();
+    let mut current_line = String::new();
+    for line in text.lines() {
+        let trimmed = line.trim_end();
+        if trimmed.ends_with('\\') {
+            current_line.push_str(trimmed[..trimmed.len() - 1].trim_end());
         } else {
-            imp.push(Dependency {
-                name: dname,
-                version: None,
-                comparator: None,
-                version_status: VersionStatus {
-                    pypi: false,
-                    pip: false,
-                    source: false,
-                },
-            });
+            current_line.push_str(line);
+            logical_lines.push(current_line);
+            current_line = String::new();
         }
-    } else if let Err(e) = parsed {
-        println!("{:#?}", e);
+    }
+    if !current_line.is_empty() {
+        logical_lines.push(current_line);
+    }
+
+    // Pass 2: Per logical line processing
+    for line in logical_lines {
+        let mut line = line.trim().to_string();
+
+        // 1. Skip empty lines or pure comment lines
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        // 2. Skip pip options lines (e.g. -r, -c, --index-url)
+        if line.starts_with('-') {
+            continue;
+        }
+
+        // 3. Strip inline comments (quoted-string-aware scan for '#')
+        // Heuristic: find the first '#' preceded by whitespace NOT inside a quoted string.
+        let mut comment_start = None;
+        let mut in_single_quote = false;
+        let mut in_double_quote = false;
+        let chars: Vec<char> = line.chars().collect();
+        for i in 0..chars.len() {
+            let c = chars[i];
+            match c {
+                '\'' if !in_double_quote => in_single_quote = !in_single_quote,
+                '"' if !in_single_quote => in_double_quote = !in_double_quote,
+                '#' if !in_single_quote && !in_double_quote => {
+                    // Only treat # as a comment start if it is preceded by whitespace
+                    // (pip itself uses this heuristic to avoid breaking URLs with fragments)
+                    if i == 0 || chars[i - 1].is_whitespace() {
+                        comment_start = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Some(idx) = comment_start {
+            line.truncate(idx);
+        }
+
+        // 4. Strip trailing pip options (scan for ' --')
+        if let Some(idx) = line.find(" --") {
+            line.truncate(idx);
+        }
+
+        // 5. Final strip and discard if empty
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        // 6. What remains is a PEP 508 specifier
+        let parsed = pep_508::parse(line);
+
+        if let Ok(ref dep) = parsed {
+            let dname = dep.name.to_string();
+            if let Some(ver) = &dep.spec {
+                if let Spec::Version(verspec) = ver {
+                    if let Some(v) = verspec.iter().next() {
+                        let version = v.version.to_string();
+                        let comparator = v.comparator;
+                        imp.push(Dependency {
+                            name: dname,
+                            version: Some(version),
+                            comparator: Some(comparator),
+                            version_status: VersionStatus {
+                                pypi: false,
+                                pip: false,
+                                source: true,
+                            },
+                        });
+                    }
+                }
+            } else {
+                imp.push(Dependency {
+                    name: dname,
+                    version: None,
+                    comparator: None,
+                    version_status: VersionStatus {
+                        pypi: false,
+                        pip: false,
+                        source: false,
+                    },
+                });
+            }
+        } else if let Err(e) = parsed {
+            // Silently fail or log for requirements fragments that aren't PEP 508
+            // (e.g. local paths, which are common but not vulnerabilities)
+            if ARGS.get().map(|a| a.pedantic).unwrap_or(false) {
+                eprintln!("Failed to parse requirement '{}': {:?}", line, e);
+            }
+        }
     }
 }
 
