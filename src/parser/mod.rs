@@ -1,14 +1,14 @@
-use std::fs;
-use std::io::{BufRead, BufReader};
-use std::path::Path;
 use std::ffi::OsString;
+use std::fs;
 use std::fs::File;
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
+use std::path::Path;
 mod extractor;
 pub mod structs;
+use super::display::{theme::is_tty, SourceContext};
 use super::scanner;
-use super::display::{SourceContext, theme::is_tty};
-use structs::{FileTypes, FoundFile, FoundFileResult};
 use crate::error::PyscanError;
+use structs::{FileTypes, FoundFile, FoundFileResult};
 
 pub async fn scan_dir(dir: &Path) -> crate::error::Result<()> {
     let mut result = FoundFileResult::new();
@@ -137,7 +137,7 @@ async fn find_setuppy_imports(f: &[FoundFile]) -> crate::error::Result<()> {
         if file.filetype == FileTypes::SetupPy {
             match fs::read_to_string(&file.path) {
                 Ok(content) => {
-                    extractor::extract_imports_setup_py(content.as_str(), &mut imports);
+                    extractor::extract_imports_setup_py(&content, &mut imports);
                     source_ctx = Some(SourceContext {
                         file_path: file.path.to_string_lossy().to_string(),
                         content,
@@ -157,9 +157,10 @@ async fn find_python_imports(f: &[FoundFile]) -> crate::error::Result<()> {
     for file in f {
         if file.filetype == FileTypes::Python {
             if let Ok(fhandle) = File::open(&file.path) {
-                let reader = BufReader::new(fhandle);
-                for line in reader.lines().flatten() {
-                    extractor::extract_imports_python(line, &mut imports);
+                let mut line_buffer = String::new();
+                let mut reader = BufReader::new(fhandle);
+                while reader.read_line(&mut line_buffer)? > 0 {
+                    extractor::extract_imports_python(&line_buffer, &mut imports);
                 }
             }
         }
@@ -178,14 +179,17 @@ async fn find_reqs_imports(f: &[FoundFile]) -> crate::error::Result<()> {
             print_source_info(&file_name);
 
             if let Ok(content) = fs::read_to_string(&file.path) {
-                extractor::extract_imports_reqs(content.clone(), &mut imports);
+                extractor::extract_imports_reqs(&content, &mut imports);
 
                 source_ctx = Some(SourceContext {
                     file_path: file_name,
                     content,
                 });
             } else {
-                eprintln!("There was a problem reading your {}", file.name.to_string_lossy());
+                eprintln!(
+                    "There was a problem reading your {}",
+                    file.name.to_string_lossy()
+                );
             }
         }
     }
@@ -202,7 +206,10 @@ async fn find_pyproject_imports(f: &[FoundFile]) -> crate::error::Result<()> {
         if file.filetype == FileTypes::Pyproject {
             match fs::read_to_string(&file.path) {
                 Ok(content) => {
-                    let _ = extractor::extract_imports_pyproject(content.clone(), &mut imports);
+                    let _ = extractor::extract_imports_pyproject(
+                        toml::from_str(&content)?,
+                        &mut imports,
+                    );
                     source_ctx = Some(SourceContext {
                         file_path: file.path.to_string_lossy().to_string(),
                         content,
@@ -225,7 +232,8 @@ async fn find_uvlock_imports(f: &[FoundFile]) -> crate::error::Result<()> {
         if file.filetype == FileTypes::UvLock {
             match fs::read_to_string(&file.path) {
                 Ok(content) => {
-                    let _ = extractor::extract_imports_uvlock(content.clone(), &mut imports);
+                    let _ =
+                        extractor::extract_imports_uvlock(toml::from_str(&content)?, &mut imports);
                     source_ctx = Some(SourceContext {
                         file_path: file.path.to_string_lossy().to_string(),
                         content,
@@ -246,12 +254,16 @@ async fn find_cyclonedx_imports(f: &[FoundFile]) -> crate::error::Result<()> {
 
     for file in f {
         if file.filetype == FileTypes::CycloneDx {
-            match fs::read_to_string(&file.path) {
-                Ok(content) => {
-                    extractor::extract_imports_cyclonedx(content.clone(), &mut imports);
-                    // Do not provide source_ctx for SBOMs to avoid parsing/rendering massive JSON files in miette
+            if let Ok(fhandle) = File::open(&file.path) {
+                match serde_json::from_reader(fhandle) {
+                    Ok(content) => {
+                        extractor::extract_imports_cyclonedx(content, &mut imports);
+                        // Do not provide source_ctx for SBOMs to avoid parsing/rendering massive JSON files in miette
+                    }
+                    Err(_) => eprintln!("Failed to parse CycloneDX SBOM JSON"),
                 }
-                Err(_) => eprintln!("There was a problem reading your CycloneDX SBOM"),
+            } else {
+                eprintln!("There was a problem reading your CycloneDX SBOM");
             }
         }
     }
@@ -266,12 +278,16 @@ async fn find_spdx_imports(f: &[FoundFile]) -> crate::error::Result<()> {
 
     for file in f {
         if file.filetype == FileTypes::Spdx {
-            match fs::read_to_string(&file.path) {
-                Ok(content) => {
-                    extractor::extract_imports_spdx(content.clone(), &mut imports);
-                    // Do not provide source_ctx for SBOMs
+            if let Ok(fhandle) = File::open(&file.path) {
+                match serde_json::from_reader(fhandle) {
+                    Ok(content) => {
+                        extractor::extract_imports_spdx(content, &mut imports);
+                        // Do not provide source_ctx for SBOMs
+                    }
+                    Err(_) => eprintln!("Failed to parse SPDX SBOM JSON"),
                 }
-                Err(_) => eprintln!("There was a problem reading your SPDX SBOM"),
+            } else {
+                eprintln!("There was a problem reading your SPDX SBOM");
             }
         }
     }

@@ -6,17 +6,18 @@ use super::structs::{Dependency, VersionStatus};
 
 use pep_508::{self, Spec};
 use regex::Regex;
-use std::sync::LazyLock;
+use std::io::BufReader;
+use std::{fs::File, io::BufRead, sync::LazyLock};
 
+use crate::error::PyscanError;
 use crate::ARGS;
 use toml::{de::Error, Table, Value};
 
-static IMPORT_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\s*(?:from|import)\s+(\w+(?:\s*,\s*\w+)*)").unwrap()
-});
+static IMPORT_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*(?:from|import)\s+(\w+(?:\s*,\s*\w+)*)").unwrap());
 
-pub fn extract_imports_python(text: String, imp: &mut Vec<Dependency>) {
-    for x in IMPORT_REGEX.find_iter(&text) {
+pub fn extract_imports_python(text: &str, imp: &mut Vec<Dependency>) {
+    for x in IMPORT_REGEX.find_iter(text) {
         let mat = x.as_str().to_string();
         let mat = mat.replacen("import", "", 1).trim().to_string();
 
@@ -33,115 +34,109 @@ pub fn extract_imports_python(text: String, imp: &mut Vec<Dependency>) {
     }
 }
 
-pub fn extract_imports_reqs(text: String, imp: &mut Vec<Dependency>) {
+pub fn extract_imports_reqs(content: &str, imp: &mut Vec<Dependency>) -> Result<(), PyscanError> {
     // Pass 1: Line joining (backslash handling)
-    let mut logical_lines = Vec::new();
     let mut current_line = String::new();
-    for line in text.lines() {
-        let trimmed = line.trim_end();
+    for line in content.lines() {
+        let trimmed = line.trim();
         if trimmed.ends_with('\\') {
             current_line.push_str(trimmed[..trimmed.len() - 1].trim_end());
         } else {
-            current_line.push_str(line);
-            logical_lines.push(current_line);
-            current_line = String::new();
+            current_line.push_str(&line);
+            extract_import_reqs_from_line(&mut current_line, imp);
+            current_line.clear();
         }
     }
-    if !current_line.is_empty() {
-        logical_lines.push(current_line);
+    Ok(())
+}
+
+fn extract_import_reqs_from_line(line: &mut String, imp: &mut Vec<Dependency>) {
+    // 1. Skip empty lines or pure comment lines
+    if line.is_empty() || line.starts_with('#') {
+        return;
     }
 
-    // Pass 2: Per logical line processing
-    for line in logical_lines {
-        let mut line = line.trim().to_string();
+    // 2. Skip pip options lines (e.g. -r, -c, --index-url)
+    if line.starts_with('-') {
+        return;
+    }
 
-        // 1. Skip empty lines or pure comment lines
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-
-        // 2. Skip pip options lines (e.g. -r, -c, --index-url)
-        if line.starts_with('-') {
-            continue;
-        }
-
-        // 3. Strip inline comments (quoted-string-aware scan for '#')
-        // Heuristic: find the first '#' preceded by whitespace NOT inside a quoted string.
-        let mut comment_start = None;
-        let mut in_single_quote = false;
-        let mut in_double_quote = false;
-        let chars: Vec<char> = line.chars().collect();
-        for i in 0..chars.len() {
-            let c = chars[i];
-            match c {
-                '\'' if !in_double_quote => in_single_quote = !in_single_quote,
-                '"' if !in_single_quote => in_double_quote = !in_double_quote,
-                '#' if !in_single_quote && !in_double_quote => {
-                    // Only treat # as a comment start if it is preceded by whitespace
-                    // (pip itself uses this heuristic to avoid breaking URLs with fragments)
-                    if i == 0 || chars[i - 1].is_whitespace() {
-                        comment_start = Some(i);
-                        break;
-                    }
+    // 3. Strip inline comments (quoted-string-aware scan for '#')
+    // Heuristic: find the first '#' preceded by whitespace NOT inside a quoted string.
+    let mut comment_start = None;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let chars: Vec<char> = line.chars().collect();
+    for i in 0..chars.len() {
+        let c = chars[i];
+        match c {
+            '\'' if !in_double_quote => in_single_quote = !in_single_quote,
+            '"' if !in_single_quote => in_double_quote = !in_double_quote,
+            '#' if !in_single_quote && !in_double_quote => {
+                // Only treat # as a comment start if it is preceded by whitespace
+                // (pip itself uses this heuristic to avoid breaking URLs with fragments)
+                if i == 0 || chars[i - 1].is_whitespace() {
+                    comment_start = Some(i);
+                    break;
                 }
-                _ => {}
             }
+            _ => {}
         }
-        if let Some(idx) = comment_start {
-            line.truncate(idx);
-        }
+    }
+    if let Some(idx) = comment_start {
+        line.truncate(idx);
+    }
 
-        // 4. Strip trailing pip options (scan for ' --')
-        if let Some(idx) = line.find(" --") {
-            line.truncate(idx);
-        }
+    // 4. Strip trailing pip options (scan for ' --')
+    if let Some(idx) = line.find(" --") {
+        line.truncate(idx);
+    }
 
-        // 5. Final strip and discard if empty
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
+    // 5. Final strip and discard if empty
+    let line = line.trim();
+    if line.is_empty() {
+        return;
+    }
 
-        // 6. What remains is a PEP 508 specifier
-        let parsed = pep_508::parse(line);
+    // 6. What remains is a PEP 508 specifier
+    let parsed = pep_508::parse(line);
 
-        if let Ok(ref dep) = parsed {
-            let dname = dep.name.to_string();
-            if let Some(ver) = &dep.spec {
-                if let Spec::Version(verspec) = ver {
-                    if let Some(v) = verspec.iter().next() {
-                        let version = v.version.to_string();
-                        let comparator = v.comparator;
-                        imp.push(Dependency {
-                            name: dname,
-                            version: Some(version),
-                            comparator: Some(comparator),
-                            version_status: VersionStatus {
-                                pypi: false,
-                                pip: false,
-                                source: true,
-                            },
-                        });
-                    }
+    if let Ok(ref dep) = parsed {
+        let dname = dep.name.to_string();
+        if let Some(ver) = &dep.spec {
+            if let Spec::Version(verspec) = ver {
+                if let Some(v) = verspec.iter().next() {
+                    let version = v.version.to_string();
+                    let comparator = v.comparator;
+                    imp.push(Dependency {
+                        name: dname,
+                        version: Some(version),
+                        comparator: Some(comparator),
+                        version_status: VersionStatus {
+                            pypi: false,
+                            pip: false,
+                            source: true,
+                        },
+                    });
                 }
-            } else {
-                imp.push(Dependency {
-                    name: dname,
-                    version: None,
-                    comparator: None,
-                    version_status: VersionStatus {
-                        pypi: false,
-                        pip: false,
-                        source: false,
-                    },
-                });
             }
-        } else if let Err(e) = parsed {
-            // Silently fail or log for requirements fragments that aren't PEP 508
-            // (e.g. local paths, which are common but not vulnerabilities)
-            if ARGS.get().map(|a| a.pedantic).unwrap_or(false) {
-                eprintln!("Failed to parse requirement '{}': {:?}", line, e);
-            }
+        } else {
+            imp.push(Dependency {
+                name: dname,
+                version: None,
+                comparator: None,
+                version_status: VersionStatus {
+                    pypi: false,
+                    pip: false,
+                    source: false,
+                },
+            });
+        }
+    } else if let Err(e) = parsed {
+        // Silently fail or log for requirements fragments that aren't PEP 508
+        // (e.g. local paths, which are common but not vulnerabilities)
+        if ARGS.get().map(|a| a.pedantic).unwrap_or(false) {
+            eprintln!("Failed to parse requirement '{}': {:?}", line, e);
         }
     }
 }
@@ -202,11 +197,9 @@ pub fn extract_imports_setup_py(setup_py_content: &str, imp: &mut Vec<Dependency
 }
 
 pub fn extract_imports_pyproject(
-    toml_content: String,
+    toml_value: Value,
     imp: &mut Vec<Dependency>,
 ) -> Result<(), Error> {
-    let toml_value: Value = toml::from_str(toml_content.as_str())?;
-
     // Helper function to extract dependency values (version strings) including nested tables
     fn extract_dependencies(
         table: &toml::value::Table,
@@ -392,12 +385,7 @@ pub fn parse_opt_deps_pyproject(table: Table, deps: &mut Vec<String>) {
 /// Dependencies with specifiers are found in `[package.metadata].requires-dist`
 /// and `[package.metadata.requires-dev]`. Resolved versions are available in
 /// each `[[package]]` entry's `version` field.
-pub fn extract_imports_uvlock(
-    toml_content: String,
-    imp: &mut Vec<Dependency>,
-) -> Result<(), Error> {
-    let toml_value: Value = toml::from_str(toml_content.as_str())?;
-
+pub fn extract_imports_uvlock(toml_value: Value, imp: &mut Vec<Dependency>) -> Result<(), Error> {
     // Build a lookup map of resolved package versions: name -> version
     let mut resolved_versions: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
@@ -560,54 +548,46 @@ fn parse_uv_specifier(
     }
 }
 
-pub fn extract_imports_cyclonedx(content: String, imp: &mut Vec<Dependency>) {
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-        if let Some(components) = v.get("components").and_then(|c| c.as_array()) {
-            for comp in components {
-                if let (Some(name), Some(version)) = (
-                    comp.get("name").and_then(|n| n.as_str()),
-                    comp.get("version").and_then(|v| v.as_str()),
-                ) {
-                    imp.push(Dependency {
-                        name: name.to_string(),
-                        version: Some(version.to_string()),
-                        comparator: None,
-                        version_status: VersionStatus {
-                            pypi: false,
-                            pip: false,
-                            source: true,
-                        },
-                    });
-                }
+pub fn extract_imports_cyclonedx(content: serde_json::Value, imp: &mut Vec<Dependency>) {
+    if let Some(components) = content.get("components").and_then(|c| c.as_array()) {
+        for comp in components {
+            if let (Some(name), Some(version)) = (
+                comp.get("name").and_then(|n| n.as_str()),
+                comp.get("version").and_then(|v| v.as_str()),
+            ) {
+                imp.push(Dependency {
+                    name: name.to_string(),
+                    version: Some(version.to_string()),
+                    comparator: None,
+                    version_status: VersionStatus {
+                        pypi: false,
+                        pip: false,
+                        source: true,
+                    },
+                });
             }
         }
-    } else {
-        eprintln!("Failed to parse CycloneDX SBOM JSON");
     }
 }
 
-pub fn extract_imports_spdx(content: String, imp: &mut Vec<Dependency>) {
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-        if let Some(packages) = v.get("packages").and_then(|c| c.as_array()) {
-            for pkg in packages {
-                if let (Some(name), Some(version)) = (
-                    pkg.get("name").and_then(|n| n.as_str()),
-                    pkg.get("versionInfo").and_then(|v| v.as_str()),
-                ) {
-                    imp.push(Dependency {
-                        name: name.to_string(),
-                        version: Some(version.to_string()),
-                        comparator: None,
-                        version_status: VersionStatus {
-                            pypi: false,
-                            pip: false,
-                            source: true,
-                        },
-                    });
-                }
+pub fn extract_imports_spdx(content: serde_json::Value, imp: &mut Vec<Dependency>) {
+    if let Some(packages) = content.get("packages").and_then(|c| c.as_array()) {
+        for pkg in packages {
+            if let (Some(name), Some(version)) = (
+                pkg.get("name").and_then(|n| n.as_str()),
+                pkg.get("versionInfo").and_then(|v| v.as_str()),
+            ) {
+                imp.push(Dependency {
+                    name: name.to_string(),
+                    version: Some(version.to_string()),
+                    comparator: None,
+                    version_status: VersionStatus {
+                        pypi: false,
+                        pip: false,
+                        source: true,
+                    },
+                });
             }
         }
-    } else {
-        eprintln!("Failed to parse SPDX SBOM JSON");
     }
 }
