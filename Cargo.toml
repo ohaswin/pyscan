@@ -37,3 +37,14 @@ semver = "1.0.17"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process"] }
 futures = "0.3.28"
 dirs = "6.0.0"
+
+[profile.release]
+opt-level = 3
+debug = "none"
+strip = "symbols"
+debug-assertions = false
+overflow-checks = false
+lto = "fat"
+panic = "abort"
+incremental = false
+codegen-units = 1
