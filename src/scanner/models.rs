@@ -44,6 +44,7 @@ pub struct Affected {
     pub versions: Option<Vec<String>>,
 }
 
+/*
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AffectedDatabaseSpecific {
     #[serde(rename = "source")]
@@ -55,6 +56,7 @@ pub struct EcosystemSpecific {
     #[serde(rename = "affected_functions")]
     pub affected_functions: Vec<String>,
 }
+*/
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Package {
@@ -107,6 +109,7 @@ pub struct VulnDatabaseSpecific {
     pub nvd_published_at: Option<String>,
 }
 
+/*
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Reference {
     #[serde(rename = "type")]
@@ -115,6 +118,7 @@ pub struct Reference {
     #[serde(rename = "url")]
     pub url: String,
 }
+*/
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Severity {
@@ -145,6 +149,7 @@ pub struct PypiResponse {
     // pub vulnerabilities: Vec<Option<serde_json::Value>>,
 }
 
+/*
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Info {
     #[serde(rename = "author")]
@@ -225,7 +230,9 @@ pub struct Info {
     #[serde(rename = "yanked_reason")]
     pub yanked_reason: Option<serde_json::Value>,
 }
+*/
 
+/*
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Downloads {
     #[serde(rename = "last_day")]
@@ -237,7 +244,9 @@ pub struct Downloads {
     #[serde(rename = "last_week")]
     pub last_week: i64,
 }
+*/
 
+/*
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectUrls {
     #[serde(rename = "Homepage")]
@@ -246,6 +255,7 @@ pub struct ProjectUrls {
     #[serde(rename = "Source Code")]
     pub source_code: String,
 }
+*/
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Url {

@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::fs;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 mod extractor;
 pub mod structs;
@@ -179,7 +179,7 @@ async fn find_reqs_imports(f: &[FoundFile]) -> crate::error::Result<()> {
             print_source_info(&file_name);
 
             if let Ok(content) = fs::read_to_string(&file.path) {
-                extractor::extract_imports_reqs(&content, &mut imports);
+                let _ = extractor::extract_imports_reqs(&content, &mut imports);
 
                 source_ctx = Some(SourceContext {
                     file_path: file_name,

@@ -6,8 +6,7 @@ use super::structs::{Dependency, VersionStatus};
 
 use pep_508::{self, Spec};
 use regex::Regex;
-use std::io::BufReader;
-use std::{fs::File, io::BufRead, sync::LazyLock};
+use std::sync::LazyLock;
 
 use crate::error::PyscanError;
 use crate::ARGS;

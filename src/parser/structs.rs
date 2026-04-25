@@ -53,7 +53,9 @@ impl FoundFileResult {
 pub struct Dependency {
     pub name: String,
     pub version: Option<String>,
+    #[allow(dead_code)]
     pub comparator: Option<pep_508::Comparator>,
+    #[allow(dead_code)]
     pub version_status: VersionStatus,
 }
 
@@ -63,6 +65,7 @@ impl Dependency {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct VersionStatus {
     // pyscan may get version info from a lot of places. This keeps it in check.

@@ -212,6 +212,7 @@ impl PipCache {
 
 pub struct SysInfo {
     pub pip_found: bool,
+    #[allow(dead_code)]
     pub pypi_found: bool,
 }
 

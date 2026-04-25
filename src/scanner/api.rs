@@ -19,8 +19,9 @@ use display::SourceContext;
 #[derive(Debug)]
 pub struct Osv {
     /// check if the host is online
+    #[allow(dead_code)]
     pub online: bool,
-    /// time of last query
+    #[allow(dead_code)]
     pub last_queried: String,
     /// the Client which handles the API.
     client: Client,
