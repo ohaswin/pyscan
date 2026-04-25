@@ -104,8 +104,9 @@ CLI args parsed (clap)
        │    │
        │    └─ find_reqs_imports() / find_pyproject_imports() / ...
        │         │
-       │         ├─ Read file contents
-       │         ├─ extractor::extract_imports_*()   ← PEP 508 / regex / TOML parsing
+       │         ├─ Read file or stream handle
+       │         ├─ Parse structured content (TOML/JSON) if applicable
+       │         ├─ extractor::extract_imports_*()   ← PEP 508 / regex / traverse Value
        │         │    └─ pushes Dependency { name, version?, comparator? } into Vec
        │         │
        │         └─ scanner::start(imports: Vec<Dependency>)
@@ -193,12 +194,20 @@ Although there are no formal traits, there are **de facto contracts** that any n
 #### Extractor Contract
 
 ```rust
-/// Every extractor function MUST conform to this signature:
+/// Every extractor function MUST conform to one of these signatures:
+
+// 1. For text-based or line-by-line parsing (requirements, setup.py, .py):
 pub fn extract_imports_<source>(
-    input: String,            // raw file content or line
+    input: &str,              // reference to file content or line
     imp: &mut Vec<Dependency> // accumulator — push extracted deps here
 )
-// Return: () — errors are printed inline, not propagated.
+
+// 2. For structured formats (TOML/JSON) where parsing happens in the parser stage:
+pub fn extract_imports_<source>(
+    input: toml::Value,       // or serde_json::Value
+    imp: &mut Vec<Dependency> // accumulator
+)
+// Return: () or Result<(), Error> — errors are handled or propagated as needed.
 ```
 
 #### Scanner Entry Contract
@@ -215,8 +224,8 @@ To add support for parsing a new Python dependency format (e.g., `Pipfile`), fol
 
 ```rust
 // In src/parser/extractor.rs — add:
-pub fn extract_imports_pipfile(content: String, imp: &mut Vec<Dependency>) {
-    // 1. Parse the file content (e.g., TOML for Pipfile)
+pub fn extract_imports_pipfile(content: toml::Value, imp: &mut Vec<Dependency>) {
+    // 1. Content is already a parsed toml::Value from the parser stage
     // 2. For each dependency found:
     imp.push(Dependency {
         name: "package_name".to_string(),
@@ -342,7 +351,7 @@ No raw pointer manipulation, no `transmute`, no manual memory management exists 
 
 2. **Write the extractor** in `src/parser/extractor.rs`:
    ```rust
-   pub fn extract_imports_pipfile(content: String, imp: &mut Vec<Dependency>) { ... }
+   pub fn extract_imports_pipfile(content: toml::Value, imp: &mut Vec<Dependency>) { ... }
    ```
 
 3. **Wire it into `scan_dir()`** in `src/parser/mod.rs` — add filename match and `result.add(FoundFile { ..., filetype: FileTypes::Pipfile, ... })`. No counter fields or incrementor methods needed — `FoundFileResult::add()` handles counting automatically via `HashMap<FileTypes, u64>`.
