@@ -78,7 +78,7 @@ pub struct Dependency {
     #[allow(dead_code)]
     pub comparator: Option<pep_508::Comparator>,
     #[allow(dead_code)]
-    pub version_status: VersionStatus,
+    pub version_source: VersionSource,
 }
 
 impl Dependency {
@@ -89,72 +89,33 @@ impl Dependency {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub struct VersionStatus {
-    // pyscan may get version info from a lot of places. This keeps it in check.
-    pub pypi: bool,
-    pub pip: bool,
-    pub source: bool,
+pub enum VersionSource {
+    Pypi,
+    Pip,
+    Code,
+    None,
 }
 
-/// implementation for VersionStatus which can get return versions while updating the status, also pick the one decided via arguments, a nice abstraction really.
-impl VersionStatus {
-    /// retrieves versions from pip and pypi.org in (pip, pypi) format.
-    pub async fn _full_check(&mut self, name: &str) -> crate::error::Result<(String, String)> {
-        let pip_v = utils::get_python_package_version(name)?;
-        let pypi_v = utils::get_package_version_pypi(name).await?;
-        self.pip = true;
-        self.pypi = true;
-        Ok((pip_v, pypi_v))
-    }
-
-    pub fn pip(name: &str) -> crate::error::Result<String> {
-        utils::get_python_package_version(name)
-    }
-
-    pub async fn pypi(name: &str) -> crate::error::Result<String> {
-        utils::get_package_version_pypi(name).await
-    }
-
-    /// returns the chosen version (from args or fallback)
-    pub async fn choose(name: &str, dversion: &Option<String>) -> String {
-        if ARGS.get().unwrap().pip {
-            match VersionStatus::pip(name) {
-                Ok(v) => return v,
-                Err(e) => {
-                    eprintln!("An error occurred while retrieving version info from pip.\n{e}");
-                    // fallthrough to pypi
-                }
-            }
-        } else if ARGS.get().unwrap().pypi {
-            match VersionStatus::pypi(name).await {
-                Ok(v) => return v,
-                Err(e) => {
-                    eprintln!(
-                        "An error occurred while retrieving version info from pypi.org.\n{e}"
-                    );
-                    // fallthrough
-                }
+/// returns the chosen version (from args or fallback)
+pub async fn choose(name: &str) -> String {
+    if ARGS.get().unwrap().pip || !ARGS.get().unwrap().pypi {
+        match utils::get_python_package_version(name) {
+            Ok(v) => return v,
+            Err(e) => {
+                eprintln!("An error occurred while retrieving version info from pip.\n{e}");
+                // fallthrough to pypi
             }
         }
-
-        // fallback begins here once made sure no arguments are provided
-        if let Some(provided) = dversion {
-            return provided.to_string();
-        }
-
-        if let Ok(v) = utils::get_python_package_version(name) {
-            println!("\x1b[33;2m{}\x1b[0m : \x1b[2mA version could not be detected in the source file, so retrieving version from pip instead.\x1b[0m",name);
-            return v;
-        }
-
-        if let Ok(v) = utils::get_package_version_pypi(name).await {
-            println!("\x1b[31;2m{}\x1b[0m : \x1b[2mA version could not be detected through source or pip, so retrieving latest version from pypi.org instead.\x1b[0m",name);
-            return v;
-        }
-
-        eprintln!("A version could not be retrieved for \x1b[1;91m{}\x1b[0m. This should not happen as pyscan defaults pip or pypi.org, unless:\n1) Pip is not installed\n2) You don't have an internet connection\n3) You did not anticipate the consequences of not specifying a version for your dependency in the configuration files.\nReach out on github.com/ohaswin/pyscan/issues if the above cases did not take place.", name);
-        String::new()
     }
+    match utils::get_package_version_pypi(name).await {
+        Ok(v) => return v,
+        Err(e) => {
+            eprintln!("An error occurred while retrieving version info from pypi.org.\n{e}");
+            // fallthrough
+        }
+    }
+    eprintln!("A version could not be retrieved for \x1b[1;91m{}\x1b[0m. This should not happen as pyscan defaults pip or pypi.org, unless:\n1) Pip is not installed\n2) You don't have an internet connection\n3) You did not anticipate the consequences of not specifying a version for your dependency in the configuration files.\nReach out on github.com/ohaswin/pyscan/issues if the above cases did not take place.", name);
+    String::new()
 }
 
 #[derive(Debug, Clone)]
