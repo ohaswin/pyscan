@@ -1,4 +1,3 @@
-use std::ffi::OsString;
 use std::fs;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -15,75 +14,12 @@ pub async fn scan_dir(dir: &Path) -> crate::error::Result<()> {
 
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
-            let filename = entry.file_name();
-            let filext = if let Some(ext) = Path::new(&filename).extension() {
-                ext.to_os_string()
-            } else {
-                "none".into()
-            };
-
-            // setup.py check comes first otherwise it might cause issues with .py checker
-            if filename == "setup.py" {
+            let filename = entry.file_name().as_os_str().to_string_lossy().to_string();
+            if let Some(filetype) = FileTypes::file_name_to_type(&filename) {
                 result.add(FoundFile {
                     name: filename,
-                    filetype: FileTypes::SetupPy,
-                    path: OsString::from(entry.path()),
-                });
-            }
-            // check if .py
-            else if filext == ".py" {
-                result.add(FoundFile {
-                    name: filename,
-                    filetype: FileTypes::Python,
-                    path: OsString::from(entry.path()),
-                });
-            }
-            // requirements.txt
-            else if filename == "requirements.txt" {
-                result.add(FoundFile {
-                    name: filename,
-                    filetype: FileTypes::Requirements,
-                    path: OsString::from(entry.path()),
-                });
-            }
-            // constraints.txt
-            else if filename == "constraints.txt" {
-                result.add(FoundFile {
-                    name: filename,
-                    filetype: FileTypes::Constraints,
-                    path: OsString::from(entry.path()),
-                });
-            }
-            // pyproject.toml
-            else if filename == "pyproject.toml" {
-                result.add(FoundFile {
-                    name: filename,
-                    filetype: FileTypes::Pyproject,
-                    path: OsString::from(entry.path()),
-                });
-            }
-            // uv.lock
-            else if filename == "uv.lock" {
-                result.add(FoundFile {
-                    name: filename,
-                    filetype: FileTypes::UvLock,
-                    path: OsString::from(entry.path()),
-                });
-            }
-            // cyclonedx
-            else if filename == "bom.json" || filename == "cyclonedx.json" {
-                result.add(FoundFile {
-                    name: filename,
-                    filetype: FileTypes::CycloneDx,
-                    path: OsString::from(entry.path()),
-                });
-            }
-            // spdx
-            else if filename == "spdx.json" || filename == "bom.spdx.json" {
-                result.add(FoundFile {
-                    name: filename,
-                    filetype: FileTypes::Spdx,
-                    path: OsString::from(entry.path()),
+                    filetype,
+                    path: entry.path(),
                 });
             }
         }
@@ -92,31 +28,23 @@ pub async fn scan_dir(dir: &Path) -> crate::error::Result<()> {
     find_import(result).await
 }
 
-/// A nice abstraction over different ways to find imports for different filetypes.
+/// abstraction over different ways to find imports for different filetypes.
+/// Only one type of file will be used to get the imported versions.
+///
 async fn find_import(res: FoundFileResult) -> crate::error::Result<()> {
     let files = &res.files;
-    if res.count(&FileTypes::Requirements) > 0 {
-        find_reqs_imports(files).await
-    } else if res.count(&FileTypes::Constraints) > 0 {
-        // since constraints and requirements have the same syntax, its okay to use the same parser.
-        find_reqs_imports(files).await
-    } else if res.count(&FileTypes::UvLock) > 0 {
-        // uv.lock has resolved versions — prefer over pyproject.toml
-        find_uvlock_imports(files).await
-    } else if res.count(&FileTypes::CycloneDx) > 0 {
-        find_cyclonedx_imports(files).await
-    } else if res.count(&FileTypes::Spdx) > 0 {
-        find_spdx_imports(files).await
-    } else if res.count(&FileTypes::Pyproject) > 0 {
-        find_pyproject_imports(files).await
-    } else if res.count(&FileTypes::SetupPy) > 0 {
-        find_setuppy_imports(files).await
-    } else if res.count(&FileTypes::Python) > 0 {
-        find_python_imports(files).await
-    } else {
-        Err(PyscanError::Parser(
-            "Could not find any requirements.txt, uv.lock, pyproject.toml or python files in this directory".to_string()
-        ))
+
+    match res.priority_file_type {
+        Some(FileTypes::Requirements | FileTypes::Constraints) => find_reqs_imports(files).await,
+        Some(FileTypes::UvLock) => find_uvlock_imports(files).await,
+        Some(FileTypes::CycloneDx) => find_cyclonedx_imports(files).await,
+        Some(FileTypes::Spdx) => find_spdx_imports(files).await,
+        Some(FileTypes::Pyproject) => find_pyproject_imports(files).await,
+        Some(FileTypes::SetupPy) => find_setuppy_imports(files).await,
+        Some(FileTypes::Python) => find_python_imports(files).await,
+        None => Err(PyscanError::Parser(
+            "Could not find any requirements.txt, constraints.txt, uv.lock, pyproject.toml, setup.py, SBOM, or python files in this directory".to_string(),
+        )),
     }
 }
 
@@ -155,13 +83,11 @@ async fn find_python_imports(f: &[FoundFile]) -> crate::error::Result<()> {
 
     let mut imports = Vec::new();
     for file in f {
-        if file.filetype == FileTypes::Python {
-            if let Ok(fhandle) = File::open(&file.path) {
-                let mut line_buffer = String::new();
-                let mut reader = BufReader::new(fhandle);
-                while reader.read_line(&mut line_buffer)? > 0 {
-                    extractor::extract_imports_python(&line_buffer, &mut imports);
-                }
+        if let Ok(fhandle) = File::open(&file.path) {
+            let mut line_buffer = String::new();
+            let mut reader = BufReader::new(fhandle);
+            while reader.read_line(&mut line_buffer)? > 0 {
+                extractor::extract_imports_python(&line_buffer, &mut imports);
             }
         }
     }
@@ -174,23 +100,18 @@ async fn find_reqs_imports(f: &[FoundFile]) -> crate::error::Result<()> {
     let mut source_ctx: Option<SourceContext> = None;
 
     for file in f {
-        if file.filetype == FileTypes::Requirements || file.filetype == FileTypes::Constraints {
-            let file_name = file.name.to_string_lossy().to_string();
-            print_source_info(&file_name);
+        let file_name = file.name.clone();
+        print_source_info(&file_name);
 
-            if let Ok(content) = fs::read_to_string(&file.path) {
-                let _ = extractor::extract_imports_reqs(&content, &mut imports);
+        if let Ok(content) = fs::read_to_string(&file.path) {
+            let _ = extractor::extract_imports_reqs(&content, &mut imports);
 
-                source_ctx = Some(SourceContext {
-                    file_path: file_name,
-                    content,
-                });
-            } else {
-                eprintln!(
-                    "There was a problem reading your {}",
-                    file.name.to_string_lossy()
-                );
-            }
+            source_ctx = Some(SourceContext {
+                file_path: file_name,
+                content,
+            });
+        } else {
+            eprintln!("There was a problem reading your {}", file.name);
         }
     }
     scanner::start(imports, source_ctx).await
@@ -203,20 +124,16 @@ async fn find_pyproject_imports(f: &[FoundFile]) -> crate::error::Result<()> {
     let mut source_ctx: Option<SourceContext> = None;
 
     for file in f {
-        if file.filetype == FileTypes::Pyproject {
-            match fs::read_to_string(&file.path) {
-                Ok(content) => {
-                    let _ = extractor::extract_imports_pyproject(
-                        toml::from_str(&content)?,
-                        &mut imports,
-                    );
-                    source_ctx = Some(SourceContext {
-                        file_path: file.path.to_string_lossy().to_string(),
-                        content,
-                    });
-                }
-                Err(_) => eprintln!("There was a problem reading your pyproject.toml"),
+        match fs::read_to_string(&file.path) {
+            Ok(content) => {
+                let _ =
+                    extractor::extract_imports_pyproject(toml::from_str(&content)?, &mut imports);
+                source_ctx = Some(SourceContext {
+                    file_path: file.path.to_string_lossy().to_string(),
+                    content,
+                });
             }
+            Err(_) => eprintln!("There was a problem reading your pyproject.toml"),
         }
     }
     scanner::start(imports, source_ctx).await
@@ -229,18 +146,15 @@ async fn find_uvlock_imports(f: &[FoundFile]) -> crate::error::Result<()> {
     let mut source_ctx: Option<SourceContext> = None;
 
     for file in f {
-        if file.filetype == FileTypes::UvLock {
-            match fs::read_to_string(&file.path) {
-                Ok(content) => {
-                    let _ =
-                        extractor::extract_imports_uvlock(toml::from_str(&content)?, &mut imports);
-                    source_ctx = Some(SourceContext {
-                        file_path: file.path.to_string_lossy().to_string(),
-                        content,
-                    });
-                }
-                Err(_) => eprintln!("There was a problem reading your uv.lock"),
+        match fs::read_to_string(&file.path) {
+            Ok(content) => {
+                let _ = extractor::extract_imports_uvlock(toml::from_str(&content)?, &mut imports);
+                source_ctx = Some(SourceContext {
+                    file_path: file.path.to_string_lossy().to_string(),
+                    content,
+                });
             }
+            Err(_) => eprintln!("There was a problem reading your uv.lock"),
         }
     }
     scanner::start(imports, source_ctx).await
@@ -253,18 +167,16 @@ async fn find_cyclonedx_imports(f: &[FoundFile]) -> crate::error::Result<()> {
     let source_ctx: Option<SourceContext> = None;
 
     for file in f {
-        if file.filetype == FileTypes::CycloneDx {
-            if let Ok(fhandle) = File::open(&file.path) {
-                match serde_json::from_reader(fhandle) {
-                    Ok(content) => {
-                        extractor::extract_imports_cyclonedx(content, &mut imports);
-                        // Do not provide source_ctx for SBOMs to avoid parsing/rendering massive JSON files in miette
-                    }
-                    Err(_) => eprintln!("Failed to parse CycloneDX SBOM JSON"),
+        if let Ok(fhandle) = File::open(&file.path) {
+            match serde_json::from_reader(fhandle) {
+                Ok(content) => {
+                    extractor::extract_imports_cyclonedx(content, &mut imports);
+                    // Do not provide source_ctx for SBOMs to avoid parsing/rendering massive JSON files in miette
                 }
-            } else {
-                eprintln!("There was a problem reading your CycloneDX SBOM");
+                Err(_) => eprintln!("Failed to parse CycloneDX SBOM JSON"),
             }
+        } else {
+            eprintln!("There was a problem reading your CycloneDX SBOM");
         }
     }
     scanner::start(imports, source_ctx).await
@@ -277,18 +189,16 @@ async fn find_spdx_imports(f: &[FoundFile]) -> crate::error::Result<()> {
     let source_ctx: Option<SourceContext> = None;
 
     for file in f {
-        if file.filetype == FileTypes::Spdx {
-            if let Ok(fhandle) = File::open(&file.path) {
-                match serde_json::from_reader(fhandle) {
-                    Ok(content) => {
-                        extractor::extract_imports_spdx(content, &mut imports);
-                        // Do not provide source_ctx for SBOMs
-                    }
-                    Err(_) => eprintln!("Failed to parse SPDX SBOM JSON"),
+        if let Ok(fhandle) = File::open(&file.path) {
+            match serde_json::from_reader(fhandle) {
+                Ok(content) => {
+                    extractor::extract_imports_spdx(content, &mut imports);
+                    // Do not provide source_ctx for SBOMs
                 }
-            } else {
-                eprintln!("There was a problem reading your SPDX SBOM");
+                Err(_) => eprintln!("Failed to parse SPDX SBOM JSON"),
             }
+        } else {
+            eprintln!("There was a problem reading your SPDX SBOM");
         }
     }
     scanner::start(imports, source_ctx).await
