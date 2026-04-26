@@ -18,21 +18,18 @@ comfy-table = "7"
 indicatif = "0.17"
 miette = { version = "7", features = ["fancy"] }
 is-terminal = "0.4"
-nu-ansi-term = "0.50"
-
-# --- Core ---
-openssl = { version = "0.10", features = ["vendored"] }
 chrono = "0.4.24"
-clap = {version="4.2.1", features=["derive"]}
-console = "0.15.5"  # TODO: remove after confirming no remaining usages
+clap = { version = "4.2.1", features = ["derive"] }
 pep-508 = "0.5.0"
 regex = "1.7.3"
-reqwest = {version="0.11.16"}
-serde = {version="1.0.160", features=["derive", "serde_derive"]}
+reqwest = { version = "0.11.16", default-features = false, features = [
+    "rustls-tls",
+] }
+serde = { version = "1.0.160", features = ["derive", "serde_derive"] }
 serde_json = "1.0.96"
 thiserror = "2"
 toml = "0.7.3"
-lenient_semver = { version = "0.4.2", features = [ "version_semver"] }
+lenient_semver = { version = "0.4.2", features = ["version_semver"] }
 semver = "1.0.17"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process"] }
 futures = "0.3.28"
