@@ -1,51 +1,73 @@
-use std::collections::HashMap;
-use std::ffi::OsString;
+use std::path::PathBuf;
 
 use crate::{scanner::models::Query, utils, ARGS};
 
 use super::scanner::models::Vulnerability;
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+// added partialord/ord to be used for sorting
+// order matters
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Ord, PartialOrd)]
 pub enum FileTypes {
-    Python,
-    Requirements,
-    Pyproject,
+    Requirements, // high, 0
     Constraints,
-    SetupPy,
     UvLock,
     CycloneDx,
     Spdx,
+    Pyproject,
+    SetupPy,
+    Python, // low, 7
+}
+
+impl FileTypes {
+    pub fn file_name_to_type(file_name: &str) -> Option<FileTypes> {
+        let f = match file_name {
+            "setup.py" => FileTypes::SetupPy,
+            "requirements.txt" => FileTypes::Requirements,
+            "constraints.txt" => FileTypes::Constraints,
+            "pyproject.toml" => FileTypes::Pyproject,
+            "uv.lock" => FileTypes::UvLock,
+            "bom.json" | "cyclonedx.json" => FileTypes::CycloneDx,
+            "spdx.json" | "bom.spdx.json" => FileTypes::Spdx,
+            x if x.ends_with(".py") => FileTypes::Python,
+            _ => return None,
+        };
+        Some(f)
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct FoundFile {
-    pub name: OsString,
+    pub name: String,
     pub filetype: FileTypes,
-    pub path: OsString,
+    pub path: PathBuf,
 }
 
 #[derive(Debug, Clone)]
 pub struct FoundFileResult {
     /// provides overall info about the files found (useful for prioritising filetypes)
     pub files: Vec<FoundFile>,
-    counts: HashMap<FileTypes, u64>,
+    pub priority_file_type: Option<FileTypes>,
 }
 
 impl FoundFileResult {
     pub fn new() -> FoundFileResult {
         FoundFileResult {
             files: Vec::new(),
-            counts: HashMap::new(),
+            priority_file_type: None,
         }
     }
 
     pub fn add(&mut self, f: FoundFile) {
-        *self.counts.entry(f.filetype.clone()).or_insert(0) += 1;
-        self.files.push(f);
-    }
-
-    pub fn count(&self, ft: &FileTypes) -> u64 {
-        self.counts.get(ft).copied().unwrap_or(0)
+        if self.priority_file_type.is_none()
+            || &f.filetype < self.priority_file_type.as_ref().unwrap()
+        // prirotiy file not set or priority of current filetype is less than new filetype
+        {
+            self.priority_file_type = Some(f.filetype.clone());
+            self.files.clear();
+        }
+        if &f.filetype == self.priority_file_type.as_ref().unwrap() {
+            self.files.push(f);
+        }
     }
 }
 
@@ -107,7 +129,9 @@ impl VersionStatus {
             match VersionStatus::pypi(name).await {
                 Ok(v) => return v,
                 Err(e) => {
-                    eprintln!("An error occurred while retrieving version info from pypi.org.\n{e}");
+                    eprintln!(
+                        "An error occurred while retrieving version info from pypi.org.\n{e}"
+                    );
                     // fallthrough
                 }
             }
@@ -138,4 +162,70 @@ pub struct ScannedDependency {
     pub name: String,
     pub version: String,
     pub vuln: Vulnerability,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FileTypes, FoundFile, FoundFileResult};
+    use std::path::PathBuf;
+
+    #[test]
+    fn add_keeps_files_with_same_priority_type() {
+        let mut result = FoundFileResult::new();
+
+        result.add(FoundFile {
+            name: "requirements.txt".to_string(),
+            filetype: FileTypes::Requirements,
+            path: PathBuf::from("requirements.txt"),
+        });
+        result.add(FoundFile {
+            name: "dev-requirements.txt".to_string(),
+            filetype: FileTypes::Requirements,
+            path: PathBuf::from("dev-requirements.txt"),
+        });
+
+        assert_eq!(result.files.len(), 2);
+        assert_eq!(result.files[0].name, "requirements.txt");
+        assert_eq!(result.files[1].name, "dev-requirements.txt");
+    }
+
+    #[test]
+    fn add_ignores_lower_priority_file_types() {
+        let mut result = FoundFileResult::new();
+
+        result.add(FoundFile {
+            name: "requirements.txt".to_string(),
+            filetype: FileTypes::Requirements,
+            path: PathBuf::from("requirements.txt"),
+        });
+        result.add(FoundFile {
+            name: "setup.py".to_string(),
+            filetype: FileTypes::SetupPy,
+            path: PathBuf::from("setup.py"),
+        });
+
+        assert_eq!(result.files.len(), 1);
+        assert_eq!(result.files[0].name, "requirements.txt");
+        assert_eq!(result.files[0].filetype, FileTypes::Requirements);
+    }
+
+    #[test]
+    fn add_replaces_files_when_higher_priority_type_is_seen() {
+        let mut result = FoundFileResult::new();
+
+        result.add(FoundFile {
+            name: "main.py".to_string(),
+            filetype: FileTypes::Python,
+            path: PathBuf::from("main.py"),
+        });
+        result.add(FoundFile {
+            name: "requirements.txt".to_string(),
+            filetype: FileTypes::Requirements,
+            path: PathBuf::from("requirements.txt"),
+        });
+
+        assert_eq!(result.files.len(), 1);
+        assert_eq!(result.files[0].name, "requirements.txt");
+        assert_eq!(result.files[0].filetype, FileTypes::Requirements);
+    }
 }
