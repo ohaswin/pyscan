@@ -2,7 +2,7 @@
 /// it takes a String and a mutable reference to a Vec<Dependency>.
 /// String is the contents of a source file, while the mut ref vector will
 /// be used to collect the dependencies that we have extracted from the contents.
-use super::structs::{Dependency, VersionStatus};
+use super::structs::{Dependency, VersionSource};
 
 use pep_508::{self, Spec};
 use regex::Regex;
@@ -24,11 +24,7 @@ pub fn extract_imports_python(text: &str, imp: &mut Vec<Dependency>) {
             name: mat,
             version: None,
             comparator: None,
-            version_status: VersionStatus {
-                pypi: false,
-                pip: false,
-                source: false,
-            },
+            version_source: VersionSource::Code,
         })
     }
 }
@@ -111,11 +107,7 @@ fn extract_import_reqs_from_line(line: &mut String, imp: &mut Vec<Dependency>) {
                         name: dname,
                         version: Some(version),
                         comparator: Some(comparator),
-                        version_status: VersionStatus {
-                            pypi: false,
-                            pip: false,
-                            source: true,
-                        },
+                        version_source: VersionSource::Code,
                     });
                 }
             }
@@ -124,11 +116,7 @@ fn extract_import_reqs_from_line(line: &mut String, imp: &mut Vec<Dependency>) {
                 name: dname,
                 version: None,
                 comparator: None,
-                version_status: VersionStatus {
-                    pypi: false,
-                    pip: false,
-                    source: false,
-                },
+                version_source: VersionSource::None,
             });
         }
     } else if let Err(e) = parsed {
@@ -171,11 +159,7 @@ pub fn extract_imports_setup_py(setup_py_content: &str, imp: &mut Vec<Dependency
                             name: dname,
                             version: Some(version),
                             comparator: Some(comparator),
-                            version_status: VersionStatus {
-                                pypi: false,
-                                pip: false,
-                                source: true,
-                            },
+                            version_source: VersionSource::Code,
                         });
                     }
                 }
@@ -184,11 +168,7 @@ pub fn extract_imports_setup_py(setup_py_content: &str, imp: &mut Vec<Dependency
                     name: dname,
                     version: None,
                     comparator: None,
-                    version_status: VersionStatus {
-                        pypi: false,
-                        pip: false,
-                        source: false,
-                    },
+                    version_source: VersionSource::None,
                 });
             }
         }
@@ -327,11 +307,7 @@ pub fn extract_imports_pyproject(
                             name: dname.clone(),
                             version: Some(version),
                             comparator: Some(comparator),
-                            version_status: VersionStatus {
-                                pypi: false,
-                                pip: false,
-                                source: true,
-                            },
+                            version_source: VersionSource::Code,
                         });
                     }
                 }
@@ -340,11 +316,7 @@ pub fn extract_imports_pyproject(
                     name: dname.clone(),
                     version: None,
                     comparator: None,
-                    version_status: VersionStatus {
-                        pypi: false,
-                        pip: false,
-                        source: false,
-                    },
+                    version_source: VersionSource::None,
                 });
             }
         }
@@ -490,16 +462,15 @@ pub fn extract_imports_uvlock(toml_value: Value, imp: &mut Vec<Dependency>) -> R
             (ver, None)
         };
 
-        let has_source = version.is_some();
         imp.push(Dependency {
             name,
+            version_source: if version.is_some() {
+                VersionSource::Code
+            } else {
+                VersionSource::None
+            },
             version,
             comparator,
-            version_status: VersionStatus {
-                pypi: false,
-                pip: false,
-                source: has_source,
-            },
         });
     }
 
@@ -558,11 +529,7 @@ pub fn extract_imports_cyclonedx(content: serde_json::Value, imp: &mut Vec<Depen
                     name: name.to_string(),
                     version: Some(version.to_string()),
                     comparator: None,
-                    version_status: VersionStatus {
-                        pypi: false,
-                        pip: false,
-                        source: true,
-                    },
+                    version_source: VersionSource::Code,
                 });
             }
         }
@@ -580,11 +547,7 @@ pub fn extract_imports_spdx(content: serde_json::Value, imp: &mut Vec<Dependency
                     name: name.to_string(),
                     version: Some(version.to_string()),
                     comparator: None,
-                    version_status: VersionStatus {
-                        pypi: false,
-                        pip: false,
-                        source: true,
-                    },
+                    version_source: VersionSource::Code,
                 });
             }
         }
