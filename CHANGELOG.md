@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.1.1 (April 26, 2026)
+
+This patch update focuses on performance optimizations for file reading, dependency parser upgrades, and general codebase maintenance.
+
+### New Features
+
+- **PEP-508 Parser Upgrade**: Updated the internal `pep-508` parser, get rid of yanked dependencies.
+
+### Fixes & Improvements
+
+- **Memory Optimization**: Minimized string allocations during large-scale file reading, reducing CPU overhead and memory churn.
+- **Build Optimization**: Refined release build configurations to further reduce binary size and improve execution performance. Fixes #30.
+- **Codebase Sanitization**: Performed a thorough cleanup of unused imports, dead code models, and compiler warnings to improve maintainability.
+
+### New Contributors
+
+- A huge thanks to **@harsh-98** for their first contributions to the project!
+
+### Notes
+
+- Seeing the community step up with performance-focused PRs is incredible. We're continuing to push the limits of how fast a vulnerability scanner can be.
+
+---
+
 ## v2.1.0 (April 21, 2026) - The SBOM & Reachability Milestone
 
 This update brings native SBOM support, a massive refactor to our networking layer, and a new "Reachability" heuristic that makes vulnerability reports actually actionable.

@@ -18,7 +18,7 @@ use tokio::task;
 #[derive(Parser, Debug)]
 #[command(
     author = "ohaswin",
-    version = "2.1.0",
+    version = "2.1.1",
     about = "python dependency vulnerability scanner.\n\ndo 'pyscan [subcommand] --help' for specific help."
 )]
 struct Cli {
