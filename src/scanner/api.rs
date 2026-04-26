@@ -1,19 +1,19 @@
-use crate::{display, ARGS, VULN_IGNORE};
-/// provides the functions needed to connect to various advisory sources.
-use crate::{parser::structs::Dependency, scanner::models::Vulnerability};
-use crate::{
-    parser::structs::{ScannedDependency, VersionStatus},
-    scanner::models::Vuln,
-    error::PyscanError,
-};
-use reqwest::{self, Client, Method};
-use futures::future;
-use std::{fs, env, time::Instant};
 use super::{
     super::utils,
     models::{Query, QueryBatched, QueryResponse},
 };
+use crate::{display, parser::structs, ARGS, VULN_IGNORE};
+use crate::{
+    error::PyscanError,
+    parser::structs::{ScannedDependency, VersionSource},
+    scanner::models::Vuln,
+};
+/// provides the functions needed to connect to various advisory sources.
+use crate::{parser::structs::Dependency, scanner::models::Vulnerability};
 use display::SourceContext;
+use futures::future;
+use reqwest::{self, Client, Method};
+use std::{env, fs, time::Instant};
 
 /// OSV provides a distributed database for vulns, with a free API
 #[derive(Debug)]
@@ -46,25 +46,24 @@ impl Osv {
     pub async fn _query(&self, d: Dependency) -> crate::error::Result<Option<Vulnerability>> {
         let version = match d.version {
             Some(v) => v,
-            None => {
-                utils::get_package_version_pypi(d.name.as_str()).await?
-            }
+            None => utils::get_package_version_pypi(d.name.as_str()).await?,
         };
 
         Ok(self._get_json(d.name.as_str(), &version).await)
     }
 
-    pub async fn query_batched(&self, mut deps: Vec<Dependency>, source: Option<SourceContext>) -> crate::error::Result<Vec<ScannedDependency>> {
+    pub async fn query_batched(
+        &self,
+        mut deps: Vec<Dependency>,
+        source: Option<SourceContext>,
+    ) -> crate::error::Result<Vec<ScannedDependency>> {
         // Resolve missing versions in parallel
-        let _ = future::join_all(deps
-            .iter_mut()
-            .map(|d| async {
-                d.version = if d.version.is_none() {
-                    Some(VersionStatus::choose(d.name.as_str(), &d.version).await)
-                } else {
-                    d.version.clone()
-                }
-            })).await;
+        let _ = future::join_all(deps.iter_mut().map(|d| async {
+            if d.version.is_none() {
+                d.version = Some(structs::choose(d.name.as_str()).await)
+            }
+        }))
+        .await;
 
         let bar = display::create_scan_progress(deps.len());
         let scan_start = Instant::now();
@@ -76,19 +75,31 @@ impl Osv {
         let queries: Vec<Query> = deps.iter().map(|d| d.to_query()).collect();
         let batched = QueryBatched::new(queries);
 
-        let body = serde_json::to_string(&batched)
-            .map_err(|e| PyscanError::Json { source: e })?;
+        let body = serde_json::to_string(&batched).map_err(|e| PyscanError::Json { source: e })?;
 
-        let response = self.client.request(Method::POST, url).body(body).send().await
-            .map_err(|e| PyscanError::Osv(format!("Could not fetch a response from osv.dev: {e}")))?;
+        let response = self
+            .client
+            .request(Method::POST, url)
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| {
+                PyscanError::Osv(format!("Could not fetch a response from osv.dev: {e}"))
+            })?;
 
         if response.status().is_client_error() {
-            return Err(PyscanError::Osv("Failed connecting to OSV. [Client error]".to_string()));
+            return Err(PyscanError::Osv(
+                "Failed connecting to OSV. [Client error]".to_string(),
+            ));
         } else if response.status().is_server_error() {
-            return Err(PyscanError::Osv("Failed connecting to OSV. [Server error]".to_string()));
+            return Err(PyscanError::Osv(
+                "Failed connecting to OSV. [Server error]".to_string(),
+            ));
         }
 
-        let restext = response.text().await
+        let restext = response
+            .text()
+            .await
             .map_err(|e| PyscanError::Osv(format!("Failed to read OSV response: {e}")))?;
 
         let mut scanneddeps: Vec<ScannedDependency> = Vec::new();
@@ -112,13 +123,15 @@ impl Osv {
 
         let mut imports_info = imports_info;
 
-        let mut unique_ids_to_fetch: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut unique_ids_to_fetch: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
 
         // Extraction Phase
         for vres in &parsed.results {
             if let Some(vulns) = &vres.vulns {
                 for qv in vulns {
-                    let should_ignore = (VULN_IGNORE.contains(&qv.id) || ARGS.get().unwrap().ignorevulns.contains(&qv.id))
+                    let should_ignore = (VULN_IGNORE.contains(&qv.id)
+                        || ARGS.get().unwrap().ignorevulns.contains(&qv.id))
                         && !ARGS.get().unwrap().pedantic;
 
                     if should_ignore {
@@ -131,15 +144,16 @@ impl Osv {
         }
 
         // Fetch Phase
-        let fetched_vulns: Vec<Vuln> = future::join_all(
-            unique_ids_to_fetch.iter().map(|id| self.vuln_id(id))
-        ).await
-        .into_iter()
-        .filter_map(|r| r.ok())
-        .collect();
+        let fetched_vulns: Vec<Vuln> =
+            future::join_all(unique_ids_to_fetch.iter().map(|id| self.vuln_id(id)))
+                .await
+                .into_iter()
+                .filter_map(|r| r.ok())
+                .collect();
 
         // Assembly Phase
-        let mut vuln_map: std::collections::HashMap<String, Vuln> = std::collections::HashMap::new();
+        let mut vuln_map: std::collections::HashMap<String, Vuln> =
+            std::collections::HashMap::new();
         for vuln in fetched_vulns {
             vuln_map.insert(vuln.id.clone(), vuln);
         }
@@ -154,7 +168,9 @@ impl Osv {
                 }
 
                 let structvuln = Vulnerability { vulns: vecvulns };
-                if let Some(ref b) = bar { b.inc(1); }
+                if let Some(ref b) = bar {
+                    b.inc(1);
+                }
 
                 if structvuln.vulns.is_empty() {
                     continue;
@@ -181,8 +197,16 @@ impl Osv {
     pub async fn vuln_id(&self, id: &str) -> crate::error::Result<Vuln> {
         let url = format!("https://api.osv.dev/v1/vulns/{id}");
 
-        let response = self.client.request(Method::GET, url).send().await
-            .map_err(|e| PyscanError::Osv(format!("Could not fetch a response from osv.dev [vuln_id]: {e}")))?;
+        let response = self
+            .client
+            .request(Method::GET, url)
+            .send()
+            .await
+            .map_err(|e| {
+                PyscanError::Osv(format!(
+                    "Could not fetch a response from osv.dev [vuln_id]: {e}"
+                ))
+            })?;
 
         if response.status().is_client_error() {
             eprintln!("Failed connecting to OSV. [Client error]")
@@ -190,11 +214,16 @@ impl Osv {
             eprintln!("Failed connecting to OSV. [Server error]")
         }
 
-        let restext = response.text().await
+        let restext = response
+            .text()
+            .await
             .map_err(|e| PyscanError::Osv(format!("Failed to read OSV vuln response: {e}")))?;
 
-        let parsed: Vuln = serde_json::from_str(&restext)
-            .map_err(|e| PyscanError::Osv(format!("Invalid parse of API response at scanner/api::vuln_id\n{e}")))?;
+        let parsed: Vuln = serde_json::from_str(&restext).map_err(|e| {
+            PyscanError::Osv(format!(
+                "Invalid parse of API response at scanner/api::vuln_id\n{e}"
+            ))
+        })?;
 
         Ok(parsed)
     }
@@ -205,7 +234,12 @@ impl Osv {
         let body = Query::new(version, name);
         let body = serde_json::to_string(&body).unwrap();
 
-        let res = self.client.request(Method::POST, url).body(body).send().await;
+        let res = self
+            .client
+            .request(Method::POST, url)
+            .body(body)
+            .send()
+            .await;
 
         if let Ok(response) = res {
             if response.status().is_client_error() {
