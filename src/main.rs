@@ -9,7 +9,7 @@ mod parser;
 mod scanner;
 mod utils;
 use crate::{
-    parser::structs::{Dependency, VersionSource},
+    parser::structs::{Dependency, VersionStatus},
     utils::get_version,
 };
 use std::env;
@@ -70,7 +70,7 @@ struct Cli {
         long,
         short = 'i',
         value_delimiter = ' ',
-        value_name = "VULN_ID1 VULN_ID2 VULN_ID3..."
+        value_name = "VULN_ID1 VULN_ID2 VULN_ID3...",
     )]
     ignorevulns: Vec<String>,
 
@@ -130,7 +130,11 @@ async fn run() -> error::Result<()> {
                 name: name.to_string(),
                 version: Some(version),
                 comparator: None,
-                version_source: VersionSource::None,
+                version_status: VersionStatus {
+                    pypi: false,
+                    pip: false,
+                    source: false,
+                },
             };
 
             let vdep = vec![dep];
@@ -139,7 +143,10 @@ async fn run() -> error::Result<()> {
         }
         Some(SubCommand::Docker { name, path }) => {
             if display::theme::is_tty() {
-                println!("  \x1b[33mDocker image:\x1b[0m \x1b[1;32m{}\x1b[0m", name);
+                println!(
+                    "  \x1b[33mDocker image:\x1b[0m \x1b[1;32m{}\x1b[0m",
+                    name
+                );
                 println!(
                     "  \x1b[33mPath inside container:\x1b[0m \x1b[1;32m{}\x1b[0m",
                     path.to_string_lossy()
@@ -182,9 +189,7 @@ async fn run() -> error::Result<()> {
     } else if let Ok(dir) = env::current_dir() {
         parser::scan_dir(dir.as_path()).await?;
     } else {
-        return Err(error::PyscanError::Parser(
-            "the given directory is empty.".to_string(),
-        ));
+        return Err(error::PyscanError::Parser("the given directory is empty.".to_string()));
     }
 
     Ok(())
