@@ -11,6 +11,17 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 
+#https://github.com/PyO3/maturin/blob/main/src/pyproject_toml.rs#L453
+[tool.maturin.generate-ci.github]
+zig = true
+[tool.maturin.generate-ci.github.linux]
+targets = ["x86_64", "x86", "aarch64", "armv7"]
+[tool.maturin.generate-ci.github.musllinux]
+targets = ["x86_64", "x86", "aarch64", "armv7"]
+[tool.maturin.generate-ci.github.windows]
+targets = ["x64", "x86", "aarch64"]
+[tool.maturin.generate-ci.github.macos]
+targets = ["x86_64", "aarch64"]
 
 [tool.maturin]
 bindings = "bin"
