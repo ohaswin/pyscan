@@ -1,6 +1,6 @@
 # ARCH_MANIFEST.md — pyscan System Manifest
 
-> **Version**: 2.1.1  
+> **Version**: 2.1.2  
 > **Generated**: 2026-04-13 (updated post-refactor)  
 > **Scope**: Single-crate CLI application (`pyscan`) — a Python dependency vulnerability scanner written in Rust.
 

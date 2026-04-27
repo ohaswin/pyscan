@@ -1,5 +1,30 @@
 # Changelog
 
+## v2.1.2 (April 27, 2026)
+
+This patch release focuses on parser flow cleanup, version-resolution refactors, and build pipeline hardening. (All contributions from @hash-98)
+
+### New Features
+
+- **Deterministic Source Priority Selection**: File discovery now applies a strict priority model (`requirements.txt`/`constraints.txt` -> `uv.lock` -> SBOM -> `pyproject.toml` -> `setup.py` -> `.py`) and scans only the highest-priority source type found.
+- **Parser Priority Test Coverage**: Added tests for file-priority selection behavior to prevent regressions in mixed-project layouts.
+
+### Fixes & Improvements
+
+- **Version Source Refactor**: Replaced the old version status flags with a cleaner `VersionSource` model and simplified missing-version resolution flow. 
+- **Extractor/Parser Cleanup**: Unified file-type detection and parser dispatch paths, reducing duplicated branching logic and improving maintainability.
+- **TLS Stack Update**: Migrated HTTP client configuration from native TLS/OpenSSL defaults to `rustls`
+- **Dependency Hygiene**: Removed unused crates and cleaned dependency declarations.
+
+### Build & CI
+
+- **Maturin CI Upgrade**: Updated generated GitHub Actions config to newer maturin tooling.
+- **Zig-Backed Wheel Builds**: Enabled `--zig` in CI build arguments and added explicit multi-arch generate-ci targets in `pyproject.toml` for Linux, musllinux, Windows, and macOS.
+
+### Notes
+
+- This release is mainly a stability and maintainability patch: fewer moving parts in parser/version logic, cleaner network/build dependencies, and more predictable source selection in real-world repos.
+
 ## v2.1.1 (April 26, 2026)
 
 This patch update focuses on performance optimizations for file reading, dependency parser upgrades, and general codebase maintenance.
