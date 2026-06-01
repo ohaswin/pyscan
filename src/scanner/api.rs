@@ -5,7 +5,7 @@ use super::{
 use crate::{display, parser::structs, ARGS, VULN_IGNORE};
 use crate::{
     error::PyscanError,
-    parser::structs::{ScannedDependency, VersionSource},
+    parser::structs::ScannedDependency,
     scanner::models::Vuln,
 };
 /// provides the functions needed to connect to various advisory sources.
@@ -57,10 +57,34 @@ impl Osv {
         mut deps: Vec<Dependency>,
         source: Option<SourceContext>,
     ) -> crate::error::Result<Vec<ScannedDependency>> {
-        // Resolve missing versions in parallel
+        // Resolve versions that are absent or only range-constrained.
+        //
+        // A dependency declared as `pydantic>=1.13.0` carries:
+        //   version    = Some("1.13.0")  — the lower bound, NOT an installed version
+        //   comparator = Some(Ge)        — a range operator
+        //
+        // Querying OSV with the literal lower bound is wrong: the version may not
+        // even exist on PyPI, producing a silent false-negative.  We must resolve
+        // range-constrained deps to the actually-installed (pip) or latest (PyPI)
+        // concrete version before forming the OSV query.
+        //
+        // Pinned deps (`==`) and lockfile-derived deps (comparator = None, version
+        // already resolved by the uv.lock parser) are left as-is.
         let _ = future::join_all(deps.iter_mut().map(|d| async {
-            if d.version.is_none() {
-                d.version = Some(structs::choose(d.name.as_str()).await)
+            let needs_resolution = match &d.comparator {
+                // No version at all — always resolve.
+                None if d.version.is_none() => true,
+                // Pinned exact version or lockfile-resolved — keep as-is.
+                None => false,
+                Some(pep_508::Comparator::Eq) => false,
+                // Any range operator (>=, <=, >, <, ~=, !=) — resolve to real version.
+                Some(_) => true,
+            };
+            if needs_resolution {
+                d.version = Some(structs::choose(d.name.as_str()).await);
+                // After resolution the version is concrete; clear the range comparator
+                // so downstream code (display, to_query) never sees a stale bound.
+                d.comparator = None;
             }
         }))
         .await;
