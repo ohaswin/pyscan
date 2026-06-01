@@ -480,6 +480,12 @@ pub fn extract_imports_uvlock(toml_value: Value, imp: &mut Vec<Dependency>) -> R
 /// Parses a uv.lock specifier string (e.g. "==5.2.8", ">=1.0.3") into
 /// a (version, comparator) pair. Falls back to the resolved lockfile version
 /// when the specifier is not a pinned `==`.
+///
+/// **Comparator semantics for the caller:**
+/// - `(Some(version), Some(Eq))` — the lockfile entry is itself `==x.y.z`.
+/// - `(Some(version), None)`     — version is the *resolved* locked version;
+///   treat it as a concrete pin so the scanner does not re-resolve it via pip/PyPI.
+/// - `(None, None)`              — no specifier and no resolved version found.
 fn parse_uv_specifier(
     spec_str: &str,
     name: &str,
@@ -506,10 +512,14 @@ fn parse_uv_specifier(
     };
 
     match comparator {
+        // True pinned equality: keep as-is so the scanner skips re-resolution.
         Some(pep_508::Comparator::Eq) => (version_str, comparator),
+        // Range specifier: resolve to the concrete locked version and clear the
+        // comparator.  Returning `None` for the comparator tells the scanner that
+        // this version is already a concrete pin — it must not call choose() on it.
         Some(_) => {
             let resolved = resolved_versions.get(name).cloned().or(version_str);
-            (resolved, comparator)
+            (resolved, None)
         }
         None => {
             let resolved = resolved_versions.get(name).cloned();
