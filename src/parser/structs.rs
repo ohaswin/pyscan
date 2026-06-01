@@ -106,7 +106,7 @@ pub async fn choose(name: &str) -> String {
         match utils::get_python_package_version(name) {
             Ok(v) => return v,
             Err(e) => {
-                eprintln!("An error occurred while retrieving version info from pip.\n{e}");
+                eprintln!("An error occurred while retrieving '{name}' version info from pip.\n{e}");
                 // fallthrough to pypi
             }
         }
