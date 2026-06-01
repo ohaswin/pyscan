@@ -75,7 +75,11 @@ impl FoundFileResult {
 pub struct Dependency {
     pub name: String,
     pub version: Option<String>,
-    #[allow(dead_code)]
+    /// The PEP 508 comparator parsed from the dependency specifier.
+    /// `None` means the version was either absent or is already a concrete
+    /// pinned/resolved value (e.g. from a lockfile). `Some(Eq)` means `==`.
+    /// Any other `Some(_)` means a range constraint (>=, ~=, etc.) and the
+    /// scanner will resolve the version to the installed/latest before querying.
     pub comparator: Option<pep_508::Comparator>,
     #[allow(dead_code)]
     pub version_source: VersionSource,
