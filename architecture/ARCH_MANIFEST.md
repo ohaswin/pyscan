@@ -1,7 +1,7 @@
 # ARCH_MANIFEST.md — pyscan System Manifest
 
-> **Version**: 2.1.2  
-> **Generated**: 2026-04-13 (updated post-refactor)  
+> **Version**: 2.1.3
+> **Generated**: 2026-06-03 (updated for comparator-aware resolution)
 > **Scope**: Single-crate CLI application (`pyscan`) — a Python dependency vulnerability scanner written in Rust.
 
 ---
@@ -106,15 +106,17 @@ CLI args parsed (clap)
        │         │
        │         ├─ Read file or stream handle
        │         ├─ Parse structured content (TOML/JSON) if applicable
-       │         ├─ extractor::extract_imports_*()   ← PEP 508 / regex / traverse Value
-       │         │    └─ pushes Dependency { name, version?, comparator? } into Vec
+    │         ├─ extractor::extract_imports_*()   ← PEP 508 / regex / traverse Value
+    │         │    └─ pushes Dependency { name, version?, comparator? } into Vec
+    │         │       (uv.lock range specs are normalized to concrete versions)
        │         │
        │         └─ scanner::start(imports: Vec<Dependency>)
        │              │
        │              ├─ Osv::new().await             ← build reqwest Client, verify osv.dev
        │              │
-       │              ├─ Resolve missing versions (futures::future::join_all):
-       │              │    └─ VersionStatus::choose()  ← source → pip → pypi fallback
+    │              ├─ Resolve missing or range-constrained versions (futures::future::join_all):
+    │              │    └─ VersionStatus::choose()  ← source → pip → pypi fallback
+    │              │       comparator cleared after resolution
        │              │
        │              ├─ Batch query: POST /v1/querybatch
        │              │    ├─ deps → Vec<Query> → QueryBatched → JSON body
@@ -157,7 +159,7 @@ CLI args parsed (clap)
 |---|---|---|
 | **Runtime** | `tokio` multi-threaded (`#[tokio::main]`) | Default Tokio scheduler with `rt-multi-thread` + `process` features. |
 | **PipCache init** | `tokio::task::spawn` (fire-and-forget) | Runs `pip list` (blocking subprocess!) on a separate Tokio task. Known issue — author notes it "still blocks" because `pip_list()` is sync and async closures aren't stable yet. |
-| **Version resolution** | `futures::future::join_all` | All missing dependency versions are resolved concurrently via async `VersionStatus::choose()` calls. |
+| **Version resolution** | `futures::future::join_all` | All missing or range-constrained dependency versions are resolved concurrently via async `VersionStatus::choose()` calls. |
 | **OSV batch query** | Single `POST` await | The batch API reduces N queries to 1. |
 | **Vuln detail fetching** | `futures::future::join_all` (global parallel) | All unique `vuln_id()` calls across all dependencies are dispatched concurrently in a single network wave. |
 | **Docker subprocess calls** | `tokio::process::Command` (async) | Docker `create`, `cp`, `stop`, `rm` commands use async subprocess execution, freeing the Tokio thread pool. |
@@ -214,7 +216,9 @@ pub fn extract_imports_<source>(
 
 ```rust
 /// The scanner expects a fully populated Vec<Dependency>.
-/// Versions may be None — the scanner will resolve them via VersionStatus::choose().
+/// Versions may be None, or a dependency may still carry a range comparator
+/// from parsing. The scanner resolves those cases via VersionStatus::choose()
+/// and clears the comparator before building OSV queries.
 pub async fn start(imports: Vec<Dependency>) -> crate::error::Result<()>
 ```
 
@@ -230,7 +234,7 @@ pub fn extract_imports_pipfile(content: toml::Value, imp: &mut Vec<Dependency>) 
     imp.push(Dependency {
         name: "package_name".to_string(),
         version: Some("1.0.0".to_string()),  // or None if absent
-        comparator: None,                      // or Some(pep_508::Comparator)
+        comparator: None,                      // range specs are normalized before scanning
         version_status: VersionStatus {
             pypi: false,
             pip: false,
@@ -266,7 +270,7 @@ pub enum FileTypes {
 | **`ARGS` is written exactly once** | `main.rs` | `OnceLock` inside `LazyLock` guarantees single initialization. Second write panics. |
 | **`PIPCACHE` is immutable after init** | `utils.rs` | `LazyLock` initializes on first access. No `&mut self` methods are called post-init (only `lookup(&self)`). `_clear_cache(&mut self)` exists but is never invoked. Init gracefully falls back to empty cache on `pip list` failure. |
 | **File-type priority is deterministic** | `parser/mod.rs` | `find_import()` enforces strict ordering: `requirements.txt` > `constraints.txt` > `uv.lock` > `pyproject.toml` > `setup.py` > `.py`. Encoded as if/else-if chain using `res.count(&FileTypes::X)`, not configurable. |
-| **Every dependency reaching the scanner MUST have a version** | `scanner/api.rs` | `query_batched()` resolves all `None` versions via `VersionStatus::choose()` before building queries. `to_query()` calls `.unwrap()` on the version — **panics if None**. |
+| **Every dependency reaching the scanner MUST have a version** | `scanner/api.rs` | `query_batched()` resolves all `None` versions and range-constrained dependencies via `VersionStatus::choose()` before building queries, then clears the comparator. `to_query()` calls `.unwrap()` on the version — **panics if None**. |
 | **OSV must be reachable before scanning begins** | `scanner/api.rs` | `Osv::new()` performs a health check GET to `osv.dev`. Failure returns `Err(PyscanError::Osv(...))`, propagated to `main()`. |
 | **Ignored vulns are union of file + CLI args** | `scanner/api.rs` | Both `.pyscanignore` contents and `--ignorevulns` are checked, bypassed if `--pedantic` is set. |
 | **Errors propagate — single exit point** | `main.rs` | `run() -> Result<()>` propagates all errors. Only `main()` calls `exit(1)` on `Err`. Vulns found also triggers `exit(1)` from `scanner/mod.rs`. |
@@ -425,7 +429,7 @@ Before submitting any change to this codebase, verify:
 - [ ] **Dependency struct**: All new parsers must produce `Dependency` with `VersionStatus { source: true }` when the version comes from the file.
 - [ ] **File priority**: If adding a new file type, decide where it sits in the `find_import()` priority chain. Current order: `requirements.txt` > `constraints.txt` > `uv.lock` > `pyproject.toml` > `setup.py` > `.py`. Use `res.count(&FileTypes::NewType) > 0` in the if/else-if chain.
 - [ ] **FoundFileResult**: Adding a new file type only requires adding a `FileTypes` enum variant (with `Hash` derive already present). No new counter fields or methods needed — `add()` and `count()` handle everything.
-- [ ] **Version resolution**: If `version` is `None`, the scanner will call `VersionStatus::choose()`. Ensure your extractor sets it to `None` only when the source genuinely lacks version info.
+- [ ] **Version resolution**: If `version` is `None` or the dependency still carries a range comparator, the scanner will call `VersionStatus::choose()`. Ensure your extractor only leaves `None` when the source genuinely lacks a concrete version.
 - [ ] **Serde models**: When adding models for a new API, use `#[serde(rename = "...")]` to match the API's JSON keys exactly. Add `Option<T>` for fields that may be absent.
 - [ ] **Testing**: The codebase has no tests currently. If you add one, place it in the same module with `#[cfg(test)]`. The `Result`-based error handling now makes functions testable (no `exit(1)` to worry about).
 - [ ] **Exit code contract**: `exit(0)` = no vulns found, `exit(1)` = vulns found or error. The single exit point is in `main()`. Don't add `exit()` calls elsewhere.

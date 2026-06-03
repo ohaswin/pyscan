@@ -27,7 +27,7 @@ pub fn get_time() -> String {
 }
 
 pub fn get_version() -> String {
-    "2.1.2".to_string()
+    "2.1.3".to_string()
 }
 
 pub fn get_vuln_ignores() -> Vec<String> {

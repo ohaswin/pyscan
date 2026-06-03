@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.1.3 (June 3, 2026)
+
+This patch release focuses on comparator-aware version resolution and clearer fallback diagnostics. Fixes #38 and #39
+
+### Fixes & Improvements
+
+- **Comparator-Aware Resolution**: Range-constrained dependencies are now resolved to concrete versions before the OSV query wave, and their comparators are cleared so downstream code never treats the resolved value as a live range.
+- **uv.lock Normalization**: `uv.lock` range specifiers now normalize to the resolved locked version instead of forwarding the original comparator after parsing.
+- **Pip Fallback Diagnostics**: Version lookup failures now include the package name, making pip fallback errors easier to trace.
+- **Dependency Flow Cleanup**: Documented the current parser-scanner contract around `Dependency.comparator` so the release notes match the actual dependency resolution flow.
+
+### Notes
+
+- This release is a stability and correctness patch: dependency resolution is more explicit, `uv.lock` handling is less ambiguous, and fallback logging is easier to act on.
+
+---
+
 ## v2.1.2 (April 27, 2026)
 
 This patch release focuses on parser flow cleanup, version-resolution refactors, and build pipeline hardening. (All contributions from @hash-98)
